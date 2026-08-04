@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q --tb=short"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: Fast unit tests — no network/API calls required.",
+    "integration: Integration tests — requires real API keys and network.",
+    "baseline: Baseline reproduction tests — runs AgentDojo tasks.",
+]

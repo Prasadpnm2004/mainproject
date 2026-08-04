@@ -1,0 +1,36 @@
+# PACM — Plan-Action Consistency Monitoring
+# .gitignore
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment secrets — NEVER commit real keys
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Test/coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Experiment outputs (raw logs can be large; commit only summaries)
+experiments/logs/
+experiments/baseline_results.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
