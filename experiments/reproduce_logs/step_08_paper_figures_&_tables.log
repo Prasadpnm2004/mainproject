@@ -1,0 +1,66 @@
+
+============================================================
+  PACM Session 6 -- Paper Figure Generator
+============================================================
+  ROC SVG       -> D:\mainproject\experiments\figures\roc_curve.svg
+
+--- ABR vs. FPR Pareto Frontier ---
+  ABR^  PACM ROC Frontier (10 points)
+  100%|    O  *    *  * *        *      *      *                   
+      |  *                                                         
+      |*                                                           
+      |                                                            
+      |                                                            
+  74%|                                                            
+      |                                                            
+      |                                                            
+      |                                                            
+      |                                                            
+  47%|                                                            
+      |                                                            
+      |                                                            
+      |                                                            
+      |                                                            
+  21%|                                                            
+      |                                                            
+      |                                                            
+      |                                                            
+      |                                                            
+      +------------------------------------------------------------
+            0%         20%         41%         61%         81%       > FPR
+
+  O = Optimal (ABR=98%, FPR=6%)
+  Latency SVG   -> D:\mainproject\experiments\figures\latency_comparison.svg
+
+--- Latency Overhead Comparison ---
+
+  PACM Latency Overhead Comparison
+  Label                               ms  Chart
+  ----------------------------------------------------------------------
+  undefended/langgraph/ignore_pr     5.8  ##########################################################
+  defended/langgraph/ignore_prev     4.3  ###########################################
+  defended/langgraph/ignore_prev     4.4  ############################################
+  defended/langgraph/ignore_prev     4.4  ############################################
+  undefended/langgraph/injec_age     6.0  ############################################################
+  defended/langgraph/injec_agent     5.8  ##########################################################
+  defended/langgraph/injec_agent     4.7  ###############################################
+  defended/langgraph/injec_agent     4.0  ########################################
+  undefended/custom_loop/ignore_     1.1  ###########
+  defended/custom_loop/ignore_pr     2.0  ####################
+  defended/custom_loop/ignore_pr     1.3  #############
+  defended/custom_loop/ignore_pr     2.2  ######################
+  undefended/custom_loop/injec_a     1.0  ##########
+  defended/custom_loop/injec_age     1.6  ################
+  defended/custom_loop/injec_age     2.2  ######################
+  defended/custom_loop/injec_age     2.3  #######################
+  Alpha SVG     -> D:\mainproject\experiments\figures\alpha_sensitivity.svg
+
+--- Alpha Sensitivity (best=0.9) ---
+  Alpha  Separation     ABR     FPR
+  -----------------------------------
+    0.5      0.3646   48.0%    0.0%
+    0.6      0.3932   72.0%    0.0%
+    0.7      0.4217   85.5%    0.0%
+    0.8      0.4502   90.5%    0.0%
+    0.9      0.4787   96.0%    0.0% *
+  Figure data   -> D:\mainproject\experiments\figures\figure_data.json

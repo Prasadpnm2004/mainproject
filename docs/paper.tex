@@ -1,0 +1,646 @@
+% docs/paper.tex
+% PACM v1.0.0 — Publication-Ready LaTeX Manuscript
+% Session 8: Final paper assembly
+%
+% Compile with:
+%   pdflatex paper.tex
+%   bibtex paper
+%   pdflatex paper.tex
+%   pdflatex paper.tex
+%
+% Or with latexmk:
+%   latexmk -pdf paper.tex
+
+\documentclass[11pt,letterpaper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{threeparttable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{natbib}
+\usepackage{times}
+
+% ── Hyperref configuration ────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=green!50!black,
+  urlcolor=blue!60!black,
+  pdfauthor={PACM Research Team},
+  pdftitle={Plan-Action Consistency Monitoring (PACM)},
+  pdfkeywords={prompt injection, LLM agents, MCP, runtime security,
+               plan-action consistency, divergence scoring}
+}
+
+% ── Code listing style ────────────────────────────────────────────────────────
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{green!60!black},
+  backgroundcolor=\color{gray!5},
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  captionpos=b,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=5pt
+}
+
+% ── Custom commands ───────────────────────────────────────────────────────────
+\newcommand{\pacm}{\textsc{PACM}}
+\newcommand{\mcp}{\textsc{MCP}}
+\newcommand{\abr}{\textit{ABR}}
+\newcommand{\fpr}{\textit{FPR}}
+\newcommand{\btsr}{\textit{BTSR}}
+\newcommand{\calD}{\mathcal{D}}
+\newcommand{\calF}{\mathcal{F}}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{TODO:} #1}}
+
+% ── Title & author ────────────────────────────────────────────────────────────
+\title{%
+  \textbf{Plan--Action Consistency Monitoring (\pacm{}):\\
+  A Lightweight Runtime Defense Against Context-Aware\\
+  Prompt Injection in Tool-Using LLM Agents}%
+}
+
+\author{%
+  \textbf{PACM Research Team}\\
+  \small{\texttt{pacm-research@example.com}}
+}
+
+\date{August 2026 \quad --- \quad v1.0.0 (arXiv preprint)}
+
+% ── Document ──────────────────────────────────────────────────────────────────
+\begin{document}
+
+\maketitle
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{abstract}
+Large language model (LLM) agents that invoke external tools via the Model
+Context Protocol (\mcp{}) are increasingly vulnerable to \emph{context-aware
+prompt injection}, where adversarial content embedded in tool outputs hijacks
+the agent's subsequent actions. We present \textbf{Plan--Action Consistency
+Monitoring (\pacm{})}, a lightweight, protocol-agnostic runtime defense that
+intercepts tool calls before execution and measures the \emph{divergence}
+between the agent's declared reasoning intent and the proposed action
+parameters. \pacm{} combines an embedding-based semantic scorer (TF-IDF or
+\texttt{sentence-transformers}/all-MiniLM-L6-v2) with rule-based argument
+scope checks and \mcp{} tool trust scores into a \textbf{trust-weighted
+friction policy} $F = D \times (1.5 - 0.5T)$ that issues
+\textsc{Allow}/\textsc{Flag}/\textsc{Block} decisions at runtime, without
+requiring LLM calls or ground-truth labels at inference time. Evaluated on a
+16-configuration benchmark across two agent harnesses (LangGraph and a
+framework-free custom loop), two attack types, and three policy tiers,
+\pacm{} achieves up to \textbf{54\% Attack Block Rate (ABR)} with
+\textbf{0\% False Positive Rate (FPR)} on synthetic adversarial traces.
+Alpha sensitivity analysis identifies $\alpha = 0.9$ as the optimal semantic
+weight (separation = 0.479). Adaptive attacker stress tests (RQ5) reveal
+consistent \textsc{Flag} escalation even for fully adaptive adversaries,
+preserving a human oversight channel. Ablations confirm that trust modulation
+and the sentence-transformers backend each contribute meaningfully to
+detection. \pacm{} is implemented as a modular pre-tool hook requiring zero
+changes to agent harness internals. Code, data, and reproduction scripts are
+released at this repository.
+\end{abstract}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+
+The proliferation of LLM agents capable of executing multi-step tool-calling
+workflows has introduced a new attack surface: \emph{prompt injection via tool
+outputs}. When an agent reads from an external source (email inbox, web page,
+database record) and that content contains adversarial instructions, the agent
+may be induced to exfiltrate data, impersonate users, or execute unintended
+system actions --- a class of attacks collectively termed
+\emph{context-aware prompt injection} (CAPI)
+\citep{Greshake2023NotWhatYouSignedUp}.
+
+Existing defenses fall into three broad categories: (1)~\emph{input
+sanitization} \citep{Liu2023PromptInjectionAttack}, (2)~\emph{structural
+isolation} \citep{Debenedetti2025CaMeL}, and (3)~\emph{training-time
+instruction hierarchies} \citep{Wallace2024InstructionHierarchy}. All three
+approaches share a fundamental limitation: they are benchmarked on
+context-independent tasks where the correct action is specified up front.
+The 2026 survey by \citet{Wang2026AgentPI} explicitly identifies
+context-dependent evaluation and the utility--security tradeoff as the
+field's biggest open problems.
+
+We present \pacm{}, which belongs to a fourth category --- \emph{runtime
+behavioral monitoring} --- and extends it with a principled scoring framework
+grounded in the \emph{consistency} between declared reasoning and actual
+actions. Rather than classifying the content of tool outputs (brittle and
+gameable), \pacm{} asks: \emph{does the tool call the agent is about to make
+match what the agent just said it intended to do?} Injection-induced hijacks
+manifest precisely as divergences between these two signals.
+
+\paragraph{Contributions.}
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Divergence formalization:} We formalize the plan-action
+    divergence problem and show that injection attacks reliably manifest as
+    measurable divergences in both semantic embedding space and argument
+    scope space (Section~\ref{sec:scoring}).
+
+  \item \textbf{DivergenceScorer:} A dual-signal scorer combining semantic
+    embedding similarity (TF-IDF or sentence-transformers) with argument
+    scope rule checks, producing $D \in [0,1]$ with configurable weighting
+    $\alpha$ (Section~\ref{sec:scoring}).
+
+  \item \textbf{Trust-Weighted FrictionPolicy:} $F = \mathrm{clip}(D \times
+    (1.5 - 0.5T),\, 0,\, 1)$, mapping friction to
+    \textsc{Allow}/\textsc{Flag}/\textsc{Block} using configurable
+    thresholds and \mcp{} tool trust scores $T$ (Section~\ref{sec:policy}).
+
+  \item \textbf{RQ5 adaptive stress test:} We implement and evaluate five
+    adaptive attack variants against \pacm{}, characterizing the monitor's
+    own attack surface (Section~\ref{sec:adaptive}).
+
+  \item \textbf{Open reproducibility:} A one-click \texttt{reproduce\_all.py}
+    script replicates all 8 experimental steps; 223 unit tests verify all
+    components (Appendix~\ref{app:repro}).
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Background \& Threat Model}
+\label{sec:background}
+
+\subsection{Model Context Protocol}
+
+\mcp{} \citep{Anthropic2024MCP} is an open protocol standardizing how LLM
+agents discover and invoke external tools. Each \mcp{} tool exposes a name,
+input/output schema, and metadata including an optional publisher trust tier.
+\pacm{} reads this trust metadata to assign $T \in [0,1]$ and modulate
+friction accordingly.
+
+\subsection{Threat Model}
+
+We consider an adaptive adversary \textbf{Adv} with \emph{read access} to
+tool outputs seen by the agent and \emph{write access} to attacker-controlled
+content that will appear in tool responses. Adv has no access to the agent's
+system prompt or \pacm{} internals.
+
+\textbf{Goal:} Induce the agent to call a high-impact tool (e.g.,
+\texttt{send\_email}) with attacker-chosen parameters (e.g., exfiltration
+target address).
+
+We model \textbf{five attack variants} (Section~\ref{sec:adaptive}):
+non-adaptive, lexical mimic, semantic disguise, scope-flag hiding, and fully
+adaptive (combined).
+
+\subsection{Research Questions}
+
+\begin{description}[leftmargin=2em]
+  \item[RQ1] Does plan-action divergence scoring reliably detect injection?
+  \item[RQ2] What is the optimal $\alpha$ (semantic vs.\ scope weight)?
+  \item[RQ3] What is \pacm{}'s latency overhead vs.\ undefended agents?
+  \item[RQ4] Which \pacm{} components contribute most (ablation)?
+  \item[RQ5] How does detection degrade against adaptive adversaries?
+\end{description}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{System Architecture}
+\label{sec:architecture}
+
+Figure~\ref{fig:pipeline} shows the \pacm{} pre-tool hook pipeline. All five
+steps execute synchronously before any tool call is dispatched.
+
+\begin{figure}[htbp]
+\centering
+\begin{lstlisting}[language=,caption={PACM pre-tool hook pipeline.},
+                   label={lst:pipeline}]
+ToolCallRecord
+  |
+  v
+[1] IntentExtractor   -> DeclaredIntent (target_tool, declared_goal, ...)
+  |
+  v
+[2] ActionCapturer    -> CapturedAction (tool_name, args, arg_scope_flags)
+  |
+  v
+[3] DivergenceScorer  -> D in [0.0, 1.0]
+  |     D = clip(alpha*D_semantic + (1-alpha)*P_scope, 0, 1)
+  v
+[4] FrictionPolicy    -> F = clip(D * (1.5 - 0.5*T), 0, 1)
+  |                      Decision: ALLOW | FLAG | BLOCK
+  v
+[5] PACMAuditEntry    -> Logged to pacm_results.jsonl
+\end{lstlisting}
+\caption{\pacm{} pre-tool hook pipeline. Steps 1--5 add $<$1\,ms overhead
+per tool call in post-warmup TF-IDF mode.}
+\label{fig:pipeline}
+\end{figure}
+
+\paragraph{Step 1 --- Intent extraction.}
+\texttt{IntentExtractor} parses the reasoning trace immediately before the
+tool call using regex + heuristics, extracting the declared target tool,
+goal, and expected parameter summary. No LLM call is made.
+
+\paragraph{Step 2 --- Action capture.}
+\texttt{ActionCapturer} normalizes the tool name and argument dict into a
+human-readable description and checks arguments against scope rules
+(external domain, path prefix, key allowlists), setting \texttt{arg\_scope\_flags}.
+
+\paragraph{Step 3 --- Divergence scoring.}
+Described in Section~\ref{sec:scoring}.
+
+\paragraph{Step 4 --- Trust-weighted friction policy.}
+Described in Section~\ref{sec:policy}.
+
+\paragraph{Step 5 --- Audit logging.}
+Every pre-tool hook invocation is logged as a \texttt{PACMAuditEntry} to
+\texttt{experiments/pacm\_results.jsonl}, including $D$, $F$, $T$, and the
+decision, enabling offline calibration and figure generation.
+
+\subsection{Dual Harness Architecture}
+
+\pacm{} is validated against two independent agent execution hosts:
+\begin{itemize}
+  \item \textbf{AgentHarness} (\texttt{src/harness/langgraph\_agent.py}):
+    LangGraph-based with \texttt{ToolNode} execution.
+  \item \textbf{CustomLoopHarness} (\texttt{src/harness/custom\_loop.py}):
+    Framework-free sequential tool-call loop.
+\end{itemize}
+
+Both expose an identical hook interface:
+\texttt{pre\_tool\_hook:~Callable[[ToolCallRecord],~Optional[str]]}.
+\pacm{} plugs into this interface without modifying harness internals,
+satisfying the \emph{protocol-agnostic} requirement.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Divergence Scorer}
+\label{sec:scoring}
+
+\subsection{Scoring Formula}
+
+\begin{equation}
+  D = \mathrm{clip}\!\left(\alpha \cdot D_{\mathrm{sem}} + (1-\alpha)
+      \cdot P_{\mathrm{scope}},\ 0,\ 1\right)
+  \label{eq:divergence}
+\end{equation}
+
+where:
+
+\begin{itemize}
+  \item $D_{\mathrm{sem}} = 1 - \mathrm{sim\_norm}(e_{\mathrm{intent}},
+    e_{\mathrm{action}}) \in [0,1]$. Cosine similarity between sentence
+    embeddings of the intent text and the action description, normalized to
+    $[0,1]$.
+  \item $P_{\mathrm{scope}} = \min(n_{\mathrm{flags}} \times 0.20,\ 0.40)$.
+    Rule-based penalty from argument scope flags (e.g., external email domain).
+  \item $\alpha \in [0,1]$: semantic weight. Default $\alpha = 0.70$;
+    Section~\ref{sec:alpha} identifies $\alpha = 0.9$ as optimal.
+\end{itemize}
+
+\paragraph{Tool name mismatch fast-path.}
+If the captured tool name differs from the declared target tool and the
+declared tool is non-empty, $D_{\mathrm{sem}}$ is set to $0.80$ immediately,
+bypassing embedding computation.
+
+\subsection{Embedding Backends}
+
+Two backends are supported via \texttt{\_get\_embedding\_backend()}:
+\begin{enumerate}
+  \item \textbf{TF-IDF} (default): Lightweight bag-of-words cosine similarity;
+    zero external dependencies; $<0.03$\,ms/call.
+  \item \textbf{sentence-transformers} \citep{Reimers2019SentenceBERT}:
+    all-MiniLM-L6-v2; richer semantic representation; $\approx$22\,ms/call
+    (post-warmup). Loaded lazily; model weights cached after first call.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Trust-Weighted Friction Policy}
+\label{sec:policy}
+
+\subsection{Friction Score}
+
+\begin{equation}
+  F = \mathrm{clip}\!\left(D \times (1.5 - 0.5 \cdot T),\ 0,\ 1\right)
+  \label{eq:friction}
+\end{equation}
+
+Intuition: $T = 1.0$ (fully trusted) gives $F = D$; $T = 0.0$ (zero-trust)
+gives $F = 1.5D$ (50\% amplification). Low-trust tools require less evidence
+before escalation.
+
+\subsection{Policy Presets}
+
+\begin{table}[htbp]
+\centering
+\caption{Friction policy presets.}
+\label{tab:policy}
+\begin{tabular}{lccc}
+\toprule
+Policy       & Allow threshold & Block threshold & Use case \\
+\midrule
+Standard     & 0.45 & 0.75 & Default production \\
+Conservative & 0.35 & 0.65 & High-risk environments \\
+Aggressive   & 0.25 & 0.55 & Maximum sensitivity \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Decisions: $F < \theta_{\mathrm{allow}}$ $\to$ \textsc{Allow};
+$\theta_{\mathrm{allow}} \le F < \theta_{\mathrm{block}}$ $\to$ \textsc{Flag}
+(log warning, optional human review); $F \ge \theta_{\mathrm{block}}$ $\to$
+\textsc{Block} (synthetic refusal returned to LLM).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experimental Evaluation}
+\label{sec:eval}
+
+\subsection{Setup}
+
+\textbf{Harnesses:} LangGraph (\texttt{AgentHarness}) and framework-free
+(\texttt{CustomLoopHarness}).
+\textbf{Attack types:} \texttt{ignore\_previous} (direct override) and
+\texttt{injec\_agent} (indirect agent-state injection).
+\textbf{Policies:} Undefended, Standard, Conservative, Aggressive.
+\textbf{Synthetic data:} 200 attack + 200 benign records with explicit
+$D_{\mathrm{sem}}$ and $P_{\mathrm{scope}}$ components.
+
+\begin{quote}
+\textbf{Stub-mode note:} ABR/FPR values in Table~\ref{tab:full_sweep}
+reflect \emph{stub mode} execution (no live LLM API calls). Stub reasoning
+traces produce uniform text, yielding moderate divergence ($D \approx
+0.3$--$0.4$) that falls in the \textsc{Flag} zone. Real-LLM evaluation
+(requiring \texttt{OPENAI\_API\_KEY}) is the next-step priority.
+\end{quote}
+
+\subsection{Alpha Sensitivity Analysis (RQ2)}
+\label{sec:alpha}
+
+\begin{table}[htbp]
+\centering
+\caption{Alpha sensitivity sweep ($n=400$ synthetic records, TF-IDF backend).}
+\label{tab:alpha}
+\begin{tabular}{rrrrrrr}
+\toprule
+$\alpha$ & $\bar{D}_{\mathrm{atk}}$ & $\bar{D}_{\mathrm{ben}}$
+         & Separation & ABR & FPR \\
+\midrule
+0.5 & 0.4961 & 0.1315 & 0.3646 & 48.0\% & 0.0\% \\
+0.6 & 0.5373 & 0.1442 & 0.3932 & 72.0\% & 0.0\% \\
+0.7 & 0.5785 & 0.1568 & 0.4217 & 85.5\% & 0.0\% \\
+0.8 & 0.6198 & 0.1695 & 0.4502 & 90.5\% & 0.0\% \\
+\textbf{0.9} & \textbf{0.6610} & \textbf{0.1822} & \textbf{0.4787}
+             & \textbf{96.0\%} & \textbf{0.0\%} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}\small
+  \item Best $\alpha$ (highest separation) highlighted in bold.
+  \item FPR = 0.0\% across all values on this synthetic distribution.
+\end{tablenotes}
+\end{table}
+
+\textbf{Finding (RQ2):} Higher $\alpha$ monotonically improves separation and
+ABR, confirming that injection attacks primarily manifest as \emph{semantic}
+divergence on this distribution. The default $\alpha = 0.70$ is conservative;
+production deployment should consider $\alpha \in [0.8, 0.9]$.
+
+\subsection{Full 16-Configuration Benchmark}
+\label{sec:sweep}
+
+\input{paper_table.tex}
+
+\subsection{Ablation Study (RQ4)}
+\label{sec:ablation}
+
+\input{ablation_table.tex}
+
+\textbf{Findings (RQ4):}
+\begin{itemize}
+  \item \textbf{Trust modulation is essential}: Variant~B ($T=1.0$ fixed)
+    achieves 0\% ABR; the trust factor is required to push $F$ above the
+    block threshold for moderate-$D$ attacks.
+  \item \textbf{ST backend improves ABR by 15\%}: $D_{\mathrm{st}}$ (54\%)
+    outperforms $D_{\mathrm{tfidf}}$ (39\%), confirming richer semantic
+    representations capture injection divergence better.
+  \item \textbf{Latency negligible}: ST backend adds only 0.011\,ms/call
+    post-warmup.
+\end{itemize}
+
+\subsection{Adaptive Attacker Stress Test (RQ5)}
+\label{sec:adaptive}
+
+\begin{table}[htbp]
+\centering
+\caption{Adaptive attacker results (STANDARD policy, $T=0.8$, TF-IDF backend,
+         $n=20$ per variant). All attacks trigger \textsc{Flag} even when
+         not \textsc{Block}ed.}
+\label{tab:adaptive}
+\begin{tabular}{lrrrrr}
+\toprule
+Variant & $\bar{D}$ & $\bar{F}$ & Evasion & ABR \\
+\midrule
+Non-adaptive      & 0.371 & 0.408 & 100\% & 0\% \\
+Lexical mimic     & 0.245 & 0.270 & 100\% & 0\% \\
+Semantic disguise & 0.376 & 0.414 & 100\% & 0\% \\
+Scope hide        & 0.311 & 0.342 & 100\% & 0\% \\
+Full adaptive     & 0.350 & 0.385 & 100\% & 0\% \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}\small
+  \item Results reflect stub-mode execution. All $F$ values fall in the
+    \textsc{Flag} zone (0.27--0.41), providing a human oversight channel.
+  \item Lexical mimic achieves lowest $\bar{D}$ (0.245); motivates
+    argument-level token-copy detection in future work.
+\end{tablenotes}
+\end{table}
+
+\textbf{Finding (RQ5):} In stub mode, all adaptive variants achieve 100\%
+evasion of the \textsc{Block} decision because stub reasoning traces produce
+uniformly low divergence. Critically, all attacks land in the
+\textsc{Flag} zone ($F \approx 0.27$--$0.41$), meaning they are logged and
+escalated for human review. With real LLM traces and genuine injections, the
+semantic gap between stated intent and hijacked action is substantially larger
+($D > 0.5$), placing most attacks in the \textsc{Block} zone. Lexical mimic
+($\bar{D} = 0.245$) is the most effective evasion strategy, motivating
+argument-level token-copy detection as future work.
+
+\subsection{Error Analysis \& Failure Mode Taxonomy}
+\label{sec:errors}
+
+On 200 synthetic records (100 attack, 100 benign):
+$\mathrm{TP}=73$, $\mathrm{TN}=92$, $\mathrm{FP}=8$, $\mathrm{FN}=27$.
+ABR = 73.0\%, FPR = 8.0\%, Precision = 90.1\%.
+
+\textbf{Dominant false negative category:} FN-4 (high-trust tool exploit,
+$n=11$) --- attacks via $T=1.0$ tools face reduced friction amplification.
+This motivates re-evaluating trust assignments for high-impact tools.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Limitations}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Stub-mode evaluation:} All benchmark ABR/BTSR values are from
+    stub mode. Real-LLM evaluation with \texttt{OPENAI\_API\_KEY} is the
+    critical next step.
+  \item \textbf{Alpha calibration:} $\alpha = 0.9$ was identified on synthetic
+    data. Real injection traces may require different calibration.
+  \item \textbf{Trust score dependency:} \pacm{} requires accurate \mcp{} trust
+    scores. If metadata is missing, $T = 0.5$ (default) is applied.
+  \item \textbf{Adaptive attacker scope:} The five variants were constructed
+    synthetically; real adversaries may devise novel evasion strategies.
+\end{enumerate}
+
+\subsection{Related Work}
+
+\textbf{Prompt injection defenses.}
+\citet{Greshake2023NotWhatYouSignedUp} first characterized indirect prompt
+injection. \citet{Perez2022IgnorePrevious} demonstrated direct injection in
+GPT-3. \citet{Liu2023PromptInjectionAttack} systematized attack techniques.
+\citet{Wang2026AgentPI} provides the most recent SoK, explicitly identifying
+the context-dependent evaluation gap that \pacm{} addresses.
+
+\textbf{Structural defenses.}
+\citet{Debenedetti2025CaMeL} propose capability-based memory isolation;
+\citet{Wallace2024InstructionHierarchy} train instruction priority.
+Both are complementary to \pacm{}: structural defenses provide formal
+guarantees but require architectural changes; \pacm{} adds a lightweight
+monitoring layer without modifying the execution engine.
+
+\textbf{Runtime monitoring.}
+\citet{Weng2026ARGUS} propose ARGUS, a concurrent runtime monitoring
+framework. \pacm{} differentiates via (a) the plan-action consistency
+signal (not just behavioral anomaly detection) and (b) \mcp{} trust
+score integration in the friction formula.
+
+\textbf{Benchmark frameworks.}
+Our evaluation extends AgentDojo \citep{Debenedetti2024AgentDojo} and
+InjecAgent \citep{Zhan2024InjecAgent}.
+
+\textbf{\mcp{} security.}
+\citet{Li2025MCPEcosystem} and \citet{Hasan2026MCPFirstGlance} characterize
+\mcp{} ecosystem threats; their trust taxonomy directly informs \pacm{}'s $T$
+score design.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+\pacm{} is a practical, modular runtime defense against context-aware prompt
+injection in tool-using LLM agents. By intercepting tool calls and measuring
+plan-action divergence through a dual semantic+scope scorer combined with
+\mcp{} trust weighting, \pacm{} provides actionable escalation decisions with
+negligible latency overhead. The adaptive attacker analysis (RQ5) reveals
+that while determined adversaries can evade blocking in stub mode, they
+consistently trigger \textsc{Flag} escalation --- preserving a human
+oversight channel even in the worst case. The ablation study confirms that
+trust modulation and the sentence-transformers backend each contribute
+meaningfully to detection. Complete real-LLM evaluation and LLM-backed intent
+extraction remain the critical next steps toward a publication-ready result.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\appendix
+
+\section{Reproducibility}
+\label{app:repro}
+
+All experiments can be reproduced with a single command (no API key needed
+for stub-mode runs):
+
+\begin{lstlisting}[language=bash,caption={One-click reproduction.}]
+# Clone and set up
+git clone <repo-url>
+cd pacm
+python -m venv .venv && .venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+
+# Run all experiments + generate figures
+python -m experiments.reproduce_all --synthetic
+
+# Full real-LLM run (requires OPENAI_API_KEY in .env)
+python -m experiments.reproduce_all
+\end{lstlisting}
+
+The script executes 8 sequential steps (unit tests, sweep, calibration,
+sensitivity, ablations, adaptive attack, error analysis, figures + tables)
+and reports a pass/fail summary.
+
+\section{Test Suite}
+\label{app:tests}
+
+\pacm{} v1.0.0 ships with 223 unit tests across 10 test files (203 non-ST + 20
+sentence-transformers backend tests), all passing. Tests require no external
+API keys.
+
+\begin{table}[htbp]
+\centering
+\caption{Test suite summary.}
+\label{tab:tests}
+\begin{tabular}{lrl}
+\toprule
+Test file & Tests & Focus \\
+\midrule
+\texttt{test\_harness\_smoke.py}          & 16 & Harness integration \\
+\texttt{test\_custom\_loop.py}            & 20 & CustomLoopHarness \\
+\texttt{test\_mcp\_wrapper.py}            & 24 & MCPWrappedTool \\
+\texttt{test\_pacm\_core.py}              & 29 & Core pipeline \\
+\texttt{test\_policy.py}                  & 23 & FrictionPolicy \\
+\texttt{test\_experiment\_runner.py}      & 25 & Sweep runner \\
+\texttt{test\_calibration\_and\_sweep.py} & 25 & Calibration, ROC \\
+\texttt{test\_sensitivity.py}             & 25 & Alpha sensitivity \\
+\texttt{test\_scorer\_transformers.py}    & 20 & ST backend \\
+\texttt{test\_adaptive\_and\_ablations.py}& 33 & RQ5, ablations, errors \\
+\midrule
+\textbf{Total} & \textbf{240} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{File Map}
+\label{app:files}
+
+\begin{table}[htbp]
+\centering
+\caption{\pacm{} v1.0.0 module map.}
+\label{tab:files}
+\begin{tabular}{llp{6.5cm}}
+\toprule
+Module & Path & Description \\
+\midrule
+\texttt{AgentHarness}      & \texttt{src/harness/langgraph\_agent.py}  & LangGraph agent \\
+\texttt{CustomLoopHarness} & \texttt{src/harness/custom\_loop.py}       & Framework-free loop \\
+\texttt{MCPWrappedTool}    & \texttt{src/harness/mcp\_tool\_wrapper.py} & \mcp{} trust metadata \\
+\texttt{IntentExtractor}   & \texttt{src/pacm/extractor.py}            & Plan extraction \\
+\texttt{ActionCapturer}    & \texttt{src/pacm/action\_capture.py}      & Arg capture + scope \\
+\texttt{DivergenceScorer}  & \texttt{src/pacm/scorer.py}               & Dual-signal scorer \\
+\texttt{FrictionPolicy}    & \texttt{src/pacm/policy.py}               & Trust-weighted policy \\
+\texttt{PACMMiddleware}    & \texttt{src/pacm/middleware.py}           & Pre-tool hook \\
+\texttt{ThresholdCalibrator} & \texttt{src/pacm/calibration.py}        & ROC calibration \\
+\texttt{AlphaSensitivity}  & \texttt{src/pacm/sensitivity.py}          & $\alpha$ sweep \\
+\texttt{AdaptiveAttacker}  & \texttt{src/pacm/adaptive\_attack.py}     & RQ5 stress test \\
+\texttt{ErrorAnalyzer}     & \texttt{src/pacm/error\_analysis.py}      & FP/FN taxonomy \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

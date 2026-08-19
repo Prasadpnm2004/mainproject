@@ -1,3 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "pacm"
+version = "1.0.0"
+description = "Plan-Action Consistency Monitoring: A lightweight runtime defense against context-aware prompt injection in tool-using LLM agents."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = [
+  "prompt injection", "LLM security", "agent security",
+  "MCP", "runtime monitoring", "divergence scoring"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Science/Research",
+  "Topic :: Security",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+"Paper" = "https://arxiv.org/abs/PLACEHOLDER"
+"Repository" = "https://github.com/PLACEHOLDER/pacm"
+"Research Guide" = "https://github.com/PLACEHOLDER/pacm/blob/main/PACM_Research_Guide.md"
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-ra -q --tb=short"

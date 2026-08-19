@@ -1,0 +1,61 @@
+{
+  "variants": [
+    {
+      "variant_id": "A",
+      "variant_name": "Full PACM (D+T)",
+      "abr": 0.39,
+      "fpr": 0.0,
+      "mean_D": 0.5758,
+      "mean_F": 0.7198,
+      "mean_latency_ms": 0.023,
+      "n_attack": 100,
+      "n_benign": 100
+    },
+    {
+      "variant_id": "B",
+      "variant_name": "Divergence Only (T=1.0)",
+      "abr": 0.0,
+      "fpr": 0.0,
+      "mean_D": 0.5758,
+      "mean_F": 0.5758,
+      "mean_latency_ms": 0.001,
+      "n_attack": 100,
+      "n_benign": 100
+    },
+    {
+      "variant_id": "C",
+      "variant_name": "Trust Only (D=0)",
+      "abr": 0.0,
+      "fpr": 0.0,
+      "mean_D": 0.0,
+      "mean_F": 0.5,
+      "mean_latency_ms": 0.001,
+      "n_attack": 100,
+      "n_benign": 100
+    },
+    {
+      "variant_id": "D_tfidf",
+      "variant_name": "Scorer: TF-IDF",
+      "abr": 0.39,
+      "fpr": 0.0,
+      "mean_D": 0.5758,
+      "mean_F": 0.7198,
+      "mean_latency_ms": 0.021,
+      "n_attack": 100,
+      "n_benign": 100
+    },
+    {
+      "variant_id": "D_st",
+      "variant_name": "Scorer: ST",
+      "abr": 0.54,
+      "fpr": 0.0,
+      "mean_D": 0.6003,
+      "mean_F": 0.7503,
+      "mean_latency_ms": 0.014,
+      "n_attack": 100,
+      "n_benign": 100
+    }
+  ],
+  "n_attack": 100,
+  "n_benign": 100
+}

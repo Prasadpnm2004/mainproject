@@ -1,0 +1,15 @@
+
+============================================================
+  PACM Session 7 -- Error Analysis
+============================================================
+
+  Generated 200 synthetic audit records.
+  Total records:  200
+  TP=73  TN=92  FP=8  FN=27
+  ABR=73.0%  FPR=8.0%  Precision=90.1%
+
+  FP breakdown: {'FP-1': 1, 'FP-2': 2, 'FP-3': 4, 'FP-4': 1}
+  FN breakdown: {'FN-1': 9, 'FN-2': 2, 'FN-3': 5, 'FN-4': 11}
+
+  Markdown report -> D:\mainproject\experiments\error_analysis_report.md
+  JSON report     -> D:\mainproject\experiments\error_analysis_report.json

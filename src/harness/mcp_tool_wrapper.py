@@ -1,7 +1,7 @@
 """
 src/harness/mcp_tool_wrapper.py
 
-MCP Tool Wrapper Stub — Session 2
+MCP Tool Wrapper Stub — Session 2 (refactored in Session 3)
 
 Provides a standardized, in-process wrapper that formats LangChain tool
 inputs/outputs with MCP-compliant JSON-RPC metadata and attaches trust
@@ -35,14 +35,14 @@ References:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Type
 
 from langchain_core.tools import BaseTool
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -249,23 +249,21 @@ class MCPToolCallLog:
         }
 
 
-class MCPWrappedTool:
+class MCPWrappedTool(BaseTool):
     """
-    Drop-in wrapper around a LangChain BaseTool that adds MCP-layer logging
-    and trust metadata to every tool call.
+    BaseTool subclass that wraps any LangChain BaseTool with MCP-layer logging
+    and trust metadata. Session 3: refactored from plain class to proper
+    BaseTool subclass for full type safety and native bind_tools() compatibility.
 
-    Can be used as a direct replacement for a raw BaseTool in AgentHarness or
-    CustomLoopHarness.  Its invoke() method has the same signature as
-    BaseTool.invoke(), so the harness sees no difference.
-
-    Additionally, every call is logged to self.call_log — a list of
-    MCPToolCallLog records that can be exported to JSONL for later analysis.
+    Every tool call is logged to self.call_log — a list of MCPToolCallLog
+    records exportable to JSONL for PACM divergence analysis.
 
     Args:
-        tool: The underlying LangChain BaseTool to wrap.
+        wrapped_tool: The underlying LangChain BaseTool to wrap.
         metadata: MCPToolMetadata with trust attributes for this tool.
 
-    Example:
+    Example::
+
         from langchain_core.tools import tool
 
         @tool
@@ -274,7 +272,7 @@ class MCPWrappedTool:
             return f"Sent to {to}"
 
         wrapped = MCPWrappedTool(
-            tool=send_email,
+            wrapped_tool=send_email,
             metadata=MCPToolMetadata(
                 tool_name="send_email",
                 publisher="trusted_corp",
@@ -287,33 +285,49 @@ class MCPWrappedTool:
         result = wrapped.invoke({"to": "a@b.com", "subject": "Hi", "body": "Hello"})
     """
 
-    def __init__(self, tool: BaseTool, metadata: MCPToolMetadata) -> None:
-        self._tool = tool
-        self.metadata = metadata
-        self.call_log: list[MCPToolCallLog] = []
-        # Expose name and description so harnesses can use it identically to BaseTool
-        self.name: str = tool.name
-        self.description: str = tool.description
+    # ── Pydantic fields ───────────────────────────────────────────────────────
+    wrapped_tool: Any = Field(..., description="Underlying BaseTool instance.")
+    mcp_metadata: Any = Field(..., description="MCPToolMetadata for this tool.")
+    call_log: list = Field(default_factory=list, description="MCPToolCallLog records.")
 
-    def invoke(self, args: dict[str, Any]) -> str:
+    # name and description are required by BaseTool; populated in model_validator
+    name: str = Field(default="")
+    description: str = Field(default="")
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @model_validator(mode="after")
+    def _populate_from_wrapped(self) -> "MCPWrappedTool":
+        """Copy name and description from the wrapped tool."""
+        if not self.name:
+            self.name = self.wrapped_tool.name
+        if not self.description:
+            self.description = self.wrapped_tool.description
+        return self
+
+    # ── BaseTool abstract method ──────────────────────────────────────────────
+
+    def _run(self, *args: Any, **kwargs: Any) -> str:
         """
-        Execute the wrapped tool with MCP-layer logging and trust annotation.
-
-        Args:
-            args: Tool argument dict.
-
-        Returns:
-            Tool result string (same as BaseTool.invoke()).
+        Execute the wrapped tool. This is the abstract method required by BaseTool.
+        MCP logging happens here so it fires on both invoke() and direct _run() calls.
         """
         from datetime import datetime, timezone
 
+        # Normalise args: _run may be called with positional or keyword args
+        if args and not kwargs:
+            # LangChain sometimes passes a single dict positionally
+            tool_args: dict[str, Any] = args[0] if isinstance(args[0], dict) else {"input": args[0]}
+        else:
+            tool_args = dict(kwargs)
+
         call_id = str(uuid.uuid4())
-        jsonrpc_req = make_jsonrpc_request(self.name, args, call_id)
+        jsonrpc_req = make_jsonrpc_request(self.name, tool_args, call_id)
         is_error = False
 
         t0 = time.perf_counter()
         try:
-            raw_result = self._tool.invoke(args)
+            raw_result = self.wrapped_tool.invoke(tool_args)
             result = raw_result if isinstance(raw_result, str) else str(raw_result)
         except Exception as exc:
             result = f"[ERROR] {exc}"
@@ -327,10 +341,10 @@ class MCPWrappedTool:
         log_entry = MCPToolCallLog(
             call_id=call_id,
             tool_name=self.name,
-            tool_args=args,
+            tool_args=tool_args,
             jsonrpc_request=jsonrpc_req,
             jsonrpc_response=jsonrpc_resp,
-            metadata=self.metadata,
+            metadata=self.mcp_metadata,
             latency_ms=latency_ms,
             is_error=is_error,
             timestamp_utc=datetime.now(timezone.utc).isoformat(),
@@ -340,7 +354,7 @@ class MCPWrappedTool:
         logger.debug(
             "MCP tool %s | trust=%.2f | latency=%.1fms | error=%s",
             self.name,
-            self.metadata.trust_score,
+            self.mcp_metadata.trust_score,
             latency_ms,
             is_error,
         )
@@ -349,6 +363,7 @@ class MCPWrappedTool:
     def export_call_log(self) -> list[dict[str, Any]]:
         """Return all call log entries as serialisable dicts."""
         return [entry.to_dict() for entry in self.call_log]
+
 
 
 # ─── Registry helpers ─────────────────────────────────────────────────────────
@@ -416,8 +431,12 @@ class MCPToolRegistry:
         """
         Wrap a list of BaseTool instances using their registered metadata.
         Unknown tools get zero-trust placeholder metadata.
+        Returns proper BaseTool subclass instances (no type: ignore needed).
         """
-        return [MCPWrappedTool(tool=t, metadata=self.get(t.name)) for t in tools]
+        return [
+            MCPWrappedTool(wrapped_tool=t, mcp_metadata=self.get(t.name))
+            for t in tools
+        ]
 
 
 # ─── Default stub registry ─────────────────────────────────────────────────────

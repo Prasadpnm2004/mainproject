@@ -1,0 +1,128 @@
+{
+  "optimal": {
+    "allow_threshold": 0.1,
+    "block_threshold": 0.55,
+    "abr": 0.98,
+    "fpr": 0.06,
+    "f1": 0.9608,
+    "n_attack": 50,
+    "n_blocked": 49,
+    "n_benign_calls": 50,
+    "n_fp": 3
+  },
+  "frontier": [
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.65,
+      "abr": 0.92,
+      "fpr": 0.0,
+      "f1": 0.9583,
+      "n_attack": 50,
+      "n_blocked": 46,
+      "n_benign_calls": 50,
+      "n_fp": 0
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.6,
+      "abr": 0.96,
+      "fpr": 0.04,
+      "f1": 0.96,
+      "n_attack": 50,
+      "n_blocked": 48,
+      "n_benign_calls": 50,
+      "n_fp": 2
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.55,
+      "abr": 0.98,
+      "fpr": 0.06,
+      "f1": 0.9608,
+      "n_attack": 50,
+      "n_blocked": 49,
+      "n_benign_calls": 50,
+      "n_fp": 3
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.5,
+      "abr": 1.0,
+      "fpr": 0.12,
+      "f1": 0.9434,
+      "n_attack": 50,
+      "n_blocked": 50,
+      "n_benign_calls": 50,
+      "n_fp": 6
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.45,
+      "abr": 1.0,
+      "fpr": 0.2,
+      "f1": 0.9091,
+      "n_attack": 50,
+      "n_blocked": 50,
+      "n_benign_calls": 50,
+      "n_fp": 10
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.4,
+      "abr": 1.0,
+      "fpr": 0.26,
+      "f1": 0.885,
+      "n_attack": 50,
+      "n_blocked": 50,
+      "n_benign_calls": 50,
+      "n_fp": 13
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.35,
+      "abr": 1.0,
+      "fpr": 0.28,
+      "f1": 0.8772,
+      "n_attack": 50,
+      "n_blocked": 50,
+      "n_benign_calls": 50,
+      "n_fp": 14
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.3,
+      "abr": 1.0,
+      "fpr": 0.44,
+      "f1": 0.8197,
+      "n_attack": 50,
+      "n_blocked": 50,
+      "n_benign_calls": 50,
+      "n_fp": 22
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.25,
+      "abr": 1.0,
+      "fpr": 0.56,
+      "f1": 0.7813,
+      "n_attack": 50,
+      "n_blocked": 50,
+      "n_benign_calls": 50,
+      "n_fp": 28
+    },
+    {
+      "allow_threshold": 0.1,
+      "block_threshold": 0.2,
+      "abr": 1.0,
+      "fpr": 0.68,
+      "f1": 0.7463,
+      "n_attack": 50,
+      "n_blocked": 50,
+      "n_benign_calls": 50,
+      "n_fp": 34
+    }
+  ],
+  "target_fpr": 0.1,
+  "grid_size": 151,
+  "auc_roc": 0.6764
+}

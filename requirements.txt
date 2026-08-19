@@ -1,5 +1,5 @@
 # PACM — Plan-Action Consistency Monitoring
-# Core dependencies for Phase 1 (Session 1: Environment Setup & Baseline)
+# Core dependencies for Phase 1-5
 
 # Agent framework
 langgraph>=0.2.0
@@ -24,3 +24,10 @@ python-dotenv>=1.0.0
 # Utilities (used in harness logging and scoring)
 jsonlines>=4.0.0
 rich>=13.0.0
+
+# Numeric (used in calibration synthetic data generator and scoring)
+numpy>=1.24.0
+
+# Semantic embedding scorer (optional — TF-IDF fallback used when not installed)
+# Install with: pip install sentence-transformers
+sentence-transformers>=2.2.0

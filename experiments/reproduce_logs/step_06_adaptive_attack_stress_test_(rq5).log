@@ -1,0 +1,21 @@
+
+============================================================
+  PACM Session 7 -- Adaptive Attacker Stress Test (RQ5)
+============================================================
+
+
+--------------------------------------------------------------------------
+  PACM Adaptive Attack Stress Test (RQ5)  |  policy=custom
+  backend=tfidf  n_total=100
+--------------------------------------------------------------------------
+  Variant                    n  Blocked   Evaded  EvasRate     ABR  mean_D  mean_F
+  ----------------------------------------------------------------------
+  non_adaptive              20        0       20      100%      0%   0.371   0.408
+  lexical_mimic             20        0       20      100%      0%   0.245   0.270
+  semantic_disguise         20        0       20      100%      0%   0.376   0.414
+  scope_hide                20        0       20      100%      0%   0.311   0.342
+  full_adaptive             20        0       20      100%      0%   0.350   0.385
+--------------------------------------------------------------------------
+  Overall: ABR=0.0%  Evasion=100.0%
+
+  Results saved -> D:\mainproject\experiments\adaptive_attack_results.json

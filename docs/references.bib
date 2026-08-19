@@ -1,0 +1,303 @@
+% references.bib — PACM v1.0.0 bibliography
+% Generated: Session 8, 2026-08-16
+% Source: PACM_Research_Guide.md §15 (20 reference papers)
+%
+% Citation key convention: AuthorYEAR_keyword
+% All arXiv entries include both eprint and url fields for maximum compatibility.
+
+% ── Foundational prompt injection papers ─────────────────────────────────────
+
+@inproceedings{Perez2022IgnorePrevious,
+  author    = {F{\'a}bio Perez and Ian Ribeiro},
+  title     = {Ignore Previous Prompt: Attack Techniques for Language Models},
+  booktitle = {NeurIPS 2022 ML Safety Workshop},
+  year      = {2022},
+  eprint    = {2211.09527},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  url       = {https://arxiv.org/abs/2211.09527},
+  note      = {First systematic taxonomy of direct prompt injection attacks.}
+}
+
+@inproceedings{Greshake2023NotWhatYouSignedUp,
+  author    = {Kai Greshake and Sahar Abdelnabi and Shailesh Mishra and
+               Christoph Endres and Thorsten Holz and Mario Fritz},
+  title     = {Not What You've Signed Up For: Compromising Real-World
+               LLM-Integrated Applications with Indirect Prompt Injections},
+  booktitle = {Proceedings of the 16th ACM Workshop on Artificial Intelligence
+               and Security (AISec '23)},
+  year      = {2023},
+  publisher = {ACM},
+  doi       = {10.1145/3605764.3623985},
+  url       = {https://dl.acm.org/doi/10.1145/3605764.3623985},
+  note      = {Foundational indirect prompt injection paper; introduced
+               the AISec 2023 threat model.}
+}
+
+@article{Liu2023PromptInjectionAttack,
+  author    = {Yi Liu and Gelei Deng and Yuekang Li and Kailong Wang and
+               Tianwei Zhang and Yepang Liu and Haoyu Wang and Yan Zheng and
+               Yang Liu},
+  title     = {Prompt Injection Attack Against {LLM}-Integrated Applications},
+  journal   = {arXiv preprint},
+  year      = {2023},
+  eprint    = {2306.05499},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2306.05499}
+}
+
+% ── Benchmark frameworks ──────────────────────────────────────────────────────
+
+@inproceedings{Debenedetti2024AgentDojo,
+  author    = {Edoardo Debenedetti and Jie Zhang and Mislav Balunovic and
+               Luca Beurer-Kellner and Marc Fischer and Florian Tram{\`e}r},
+  title     = {{AgentDojo}: A Dynamic Environment to Evaluate Attacks and
+               Defenses for {LLM} Agents},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS 2024)},
+  year      = {2024},
+  eprint    = {2406.13352},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2406.13352},
+  note      = {Benchmark framework used as PACM evaluation backbone.}
+}
+
+@article{Zhan2024InjecAgent,
+  author    = {Qiusi Zhan and Zhixiang Liang and Zifan Ying and Daniel Kang},
+  title     = {{InjecAgent}: Benchmarking Indirect Prompt Injections in
+               Tool-Calling {LLM} Agents},
+  journal   = {arXiv preprint},
+  year      = {2024},
+  eprint    = {2403.02691},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2403.02691}
+}
+
+% ── Attack variants and novel threat analyses ─────────────────────────────────
+
+@article{ToolHijacker2025,
+  author    = {{Anonymous}},
+  title     = {{ToolHijacker}: Exploiting Tool Descriptions for Prompt Injection},
+  journal   = {arXiv preprint},
+  year      = {2025},
+  eprint    = {2504.19793},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2504.19793},
+  note      = {Tool-description poisoning threat model.}
+}
+
+@article{Wang2026AgentPI,
+  author    = {Jiongnan Wang and others},
+  title     = {Landscape of Prompt Injection Threats: A Systematization of
+               Knowledge ({SoK}) and {AgentPI}},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2602.10453},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2602.10453},
+  note      = {2026 SoK; explicitly identifies context-dependent evaluation
+               and utility–security tradeoff as open problems.}
+}
+
+% ── Runtime monitoring and behavioral defenses ────────────────────────────────
+
+@article{Weng2026ARGUS,
+  author    = {Lingwei Weng and others},
+  title     = {{ARGUS}: Runtime Monitoring and {AgentLure} Evaluation Framework
+               for {LLM} Agent Security},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2605.03378},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2605.03378},
+  note      = {Concurrent work on runtime monitoring; PACM differentiates via
+               plan-action divergence scoring and MCP trust integration.}
+}
+
+@article{AgentFence2026,
+  author    = {{Anonymous}},
+  title     = {{Agent-Fence}: A Framework for Fine-Grained Runtime Access
+               Control in {LLM} Agents},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2602.07652},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2602.07652}
+}
+
+% ── MCP security and trust analyses ──────────────────────────────────────────
+
+@article{Huang2026MCPThreat,
+  author    = {Xinyi Huang and others},
+  title     = {Threat Modeling the {Model Context Protocol}: {STRIDE} and
+               {DREAD} Analysis of {MCP}-Based {LLM} Applications},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2603.22489},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2603.22489}
+}
+
+@article{Hou2025MCPLandscape,
+  author    = {Xinyi Hou and others},
+  title     = {{MCP} Landscape: Security Threats and Safety Analysis},
+  journal   = {arXiv preprint},
+  year      = {2025},
+  eprint    = {2503.23278},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2503.23278}
+}
+
+@article{Li2025MCPEcosystem,
+  author    = {Zhihao Li and Yulun Gao},
+  title     = {A First Look at the Security of the {MCP} Ecosystem},
+  journal   = {arXiv preprint},
+  year      = {2025},
+  eprint    = {2510.16558},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2510.16558},
+  note      = {Trust taxonomy directly informing PACM's T score design.}
+}
+
+@article{Hasan2026MCPFirstGlance,
+  author    = {Manar Hasan and others},
+  title     = {{MCP} at First Glance: Understanding and Evaluating {MCP}
+               Tool Behaviors},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2506.13538},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2506.13538}
+}
+
+@article{EnterpriseMCP2025,
+  author    = {{Anonymous}},
+  title     = {Enterprise-Grade Security for the {Model Context Protocol}},
+  journal   = {arXiv preprint},
+  year      = {2025},
+  eprint    = {2504.08623},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2504.08623}
+}
+
+% ── Structural and architectural defenses ─────────────────────────────────────
+
+@article{Debenedetti2025CaMeL,
+  author    = {Edoardo Debenedetti and Ilia Shumailov and Florian Tram{\`e}r},
+  title     = {{CaMeL}: Capability-Based Memory Isolation for {LLM} Agents},
+  journal   = {arXiv preprint},
+  year      = {2025},
+  eprint    = {2503.18813},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2503.18813},
+  note      = {Structural isolation approach; PACM is a lightweight
+               complement operating at runtime without architectural changes.}
+}
+
+@article{Wallace2024InstructionHierarchy,
+  author    = {Eric Wallace and Kai Xiao and Reimar Leike and Lilian Weng and
+               Johannes Heidecke and Alex Beutel},
+  title     = {The Instruction Hierarchy: Training {LLMs} to Prioritize
+               Privileged Instructions},
+  journal   = {arXiv preprint},
+  year      = {2024},
+  eprint    = {2404.13208},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  url       = {https://arxiv.org/abs/2404.13208},
+  note      = {Training-time instruction priority approach; evaluated on
+               context-independent settings.}
+}
+
+% ── Survey and SoK papers ─────────────────────────────────────────────────────
+
+@article{AttentionDefend2026,
+  author    = {{Anonymous}},
+  title     = {Attention Is All You Need to Defend Against Prompt Injection},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2512.08417},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2512.08417}
+}
+
+@article{AgenticSecurity2025,
+  author    = {{Anonymous}},
+  title     = {A Survey on Agentic Security: Threats, Defenses, and Future
+               Directions},
+  journal   = {arXiv preprint},
+  year      = {2025},
+  eprint    = {2510.06445},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2510.06445}
+}
+
+@article{LayeredAttackSurface2026,
+  author    = {{Anonymous}},
+  title     = {A Layered Attack Surface Framework for {LLM}-Integrated Systems},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2604.23338},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2604.23338}
+}
+
+@article{Ferrag2026ProtocolExploits,
+  author    = {Mohamed Amine Ferrag and others},
+  title     = {From Prompt Injections to Protocol Exploits: The Expanding
+               Attack Surface of {MCP}-Connected {LLM} Agents},
+  journal   = {arXiv preprint},
+  year      = {2026},
+  eprint    = {2506.23260},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  url       = {https://arxiv.org/abs/2506.23260}
+}
+
+% ── Supporting ML references ──────────────────────────────────────────────────
+
+@inproceedings{Vaswani2017Attention,
+  author    = {Ashish Vaswani and Noam Shazeer and Niki Parmar and
+               Jakob Uszkoreit and Llion Jones and Aidan N. Gomez and
+               {\L}ukasz Kaiser and Illia Polosukhin},
+  title     = {Attention Is All You Need},
+  booktitle = {Advances in Neural Information Processing Systems 30 (NeurIPS 2017)},
+  year      = {2017},
+  url       = {https://papers.nips.cc/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html}
+}
+
+@article{Reimers2019SentenceBERT,
+  author    = {Nils Reimers and Iryna Gurevych},
+  title     = {Sentence-{BERT}: Sentence Embeddings using {Siamese} {BERT}-Networks},
+  journal   = {arXiv preprint},
+  year      = {2019},
+  eprint    = {1908.10084},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  url       = {https://arxiv.org/abs/1908.10084},
+  note      = {all-MiniLM-L6-v2 is a distilled variant; used as PACM's
+               optional ST embedding backend.}
+}
+
+@misc{Anthropic2024MCP,
+  author    = {{Anthropic}},
+  title     = {Model Context Protocol Specification},
+  year      = {2024},
+  howpublished = {\url{https://modelcontextprotocol.io}},
+  note      = {Open protocol standardizing tool-calling for LLM agents.}
+}

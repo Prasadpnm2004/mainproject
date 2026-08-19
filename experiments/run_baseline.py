@@ -105,14 +105,19 @@ def run_agentdojo_baseline(
         benchmark_suite_without_injections,
     )
     from agentdojo.default_suites.v1.workspace.task_suite import task_suite as workspace_suite
+    from agentdojo.logging import NullLogger
+
+    NullLogger.logdir = None
 
     # ── Build LLM backend ────────────────────────────────────────────────────
     if model_name.startswith("gpt"):
         from agentdojo.agent_pipeline.llms.openai_llm import OpenAILLM
-        llm = OpenAILLM(model=model_name)
+        import openai
+        llm = OpenAILLM(client=openai.OpenAI(), model=model_name)
     elif model_name.startswith("claude"):
         from agentdojo.agent_pipeline.llms.anthropic_llm import AnthropicLLM
-        llm = AnthropicLLM(model=model_name)
+        import anthropic
+        llm = AnthropicLLM(client=anthropic.Anthropic(), model=model_name)
     else:
         raise SystemExit(f"Unsupported model prefix for AgentDojo mode: {model_name!r}")
 

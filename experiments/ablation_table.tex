@@ -1,0 +1,20 @@
+\begin{table}[htbp]
+  \centering \small
+  \caption{PACM Ablation Study: Per-Component Contribution}
+  \label{tab:ablation}
+  \begin{tabular}{llrrrr}
+    \toprule
+    ID & Variant & ABR (\%) & FPR (\%) & $\bar{D}_{atk}$ & Lat.\ (ms) \\
+    \midrule
+    A & Full PACM (D+T) & 39.0 & 0.0 & 0.576 & 0.023 \\
+    B & Divergence Only (T=1.0) & 0.0 & 0.0 & 0.576 & 0.001 \\
+    C & Trust Only (D=0) & 0.0 & 0.0 & 0.000 & 0.001 \\
+    D_tfidf & Scorer: TF-IDF & 39.0 & 0.0 & 0.576 & 0.021 \\
+    D_st & Scorer: ST & 54.0 & 0.0 & 0.600 & 0.014 \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}
+    \small
+    \item A=Full PACM; B=No trust; C=Trust-only; D=Backend comparison.
+  \end{tablenotes}
+\end{table}
