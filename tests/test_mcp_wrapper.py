@@ -214,6 +214,58 @@ class TestMCPWrappedTool:
         assert len(exported) == 1
         assert isinstance(exported[0], dict)
 
+    # ── _normalise_args tests ─────────────────────────────────────────────────
+
+    def test_normalise_recipient_to_to(self):
+        """'recipient' should be renamed to 'to'."""
+        result = MCPWrappedTool._normalise_args({"recipient": "alice@example.com", "subject": "Hi"})
+        assert result["to"] == "alice@example.com"
+        assert "recipient" not in result
+
+    def test_normalise_message_to_body(self):
+        """'message' should be renamed to 'body'."""
+        result = MCPWrappedTool._normalise_args({"to": "bob@example.com", "message": "Hello!"})
+        assert result["body"] == "Hello!"
+        assert "message" not in result
+
+    def test_normalise_content_to_body(self):
+        """'content' should be renamed to 'body'."""
+        result = MCPWrappedTool._normalise_args({"to": "bob@example.com", "content": "Hi"})
+        assert result["body"] == "Hi"
+        assert "content" not in result
+
+    def test_normalise_title_to_subject(self):
+        """'title' should be renamed to 'subject'."""
+        result = MCPWrappedTool._normalise_args({"to": "x", "title": "Meeting"})
+        assert result["subject"] == "Meeting"
+        assert "title" not in result
+
+    def test_normalise_for_date_to_date(self):
+        """'for_date' should be renamed to 'date'."""
+        result = MCPWrappedTool._normalise_args({"for_date": "2026-09-01"})
+        assert result["date"] == "2026-09-01"
+        assert "for_date" not in result
+
+    def test_normalise_text_NOT_remapped(self):
+        """'text' must NOT be remapped — it's a legitimate field name."""
+        result = MCPWrappedTool._normalise_args({"text": "hello"})
+        assert result == {"text": "hello"}
+        assert "body" not in result
+
+    def test_normalise_existing_fields_not_overwritten(self):
+        """If 'to' already exists, 'recipient' should not overwrite it."""
+        result = MCPWrappedTool._normalise_args({"to": "real@example.com", "recipient": "fake@example.com"})
+        assert result["to"] == "real@example.com"
+
+    def test_normalise_passthrough_unknown(self):
+        """Unknown args are passed through unchanged."""
+        result = MCPWrappedTool._normalise_args({"foo": "bar", "baz": 42})
+        assert result == {"foo": "bar", "baz": 42}
+
+    def test_normalise_non_dict_passthrough(self):
+        """Non-dict input (e.g. a plain string) is returned as-is."""
+        assert MCPWrappedTool._normalise_args("hello") == "hello"
+
 
 # ─── MCPToolRegistry ──────────────────────────────────────────────────────────
 

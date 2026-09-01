@@ -4,10 +4,15 @@ tests/conftest.py — Shared pytest fixtures for the PACM test suite.
 Session 6: Added session-scoped embedding backend fixtures to reduce
 test_scorer_transformers.py execution from ~2 min to ~15 sec by loading
 the sentence-transformers model once per test session.
+
+Session 10: Added PACM_FORCE_STUB autouse fixture to prevent unit tests
+from accidentally calling real LLM APIs (Ollama or OpenAI) regardless of
+the .env configuration.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +20,23 @@ import pytest
 from langchain_core.tools import tool
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+# ── Force stub mode for all unit tests ───────────────────────────────────────
+# Prevents is_real_llm_available() from returning True even when .env points
+# to a running Ollama server or has a valid OPENAI_API_KEY. Unit tests must
+# NEVER make real LLM network calls.
+
+@pytest.fixture(autouse=True, scope="session")
+def _force_stub_mode():
+    """Session-scoped autouse: set PACM_FORCE_STUB=1 for the entire test run."""
+    prev = os.environ.get("PACM_FORCE_STUB")
+    os.environ["PACM_FORCE_STUB"] = "1"
+    yield
+    if prev is None:
+        os.environ.pop("PACM_FORCE_STUB", None)
+    else:
+        os.environ["PACM_FORCE_STUB"] = prev
 
 
 # ── Harness fixtures ──────────────────────────────────────────────────────────

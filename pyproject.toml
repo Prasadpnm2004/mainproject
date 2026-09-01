@@ -32,7 +32,11 @@ classifiers = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --tb=short"
+# --capture=sys: use sys.stdout/stderr redirect instead of fd-based tmpfile
+# capture. Required for Python 3.14 compatibility with pytest-9.1.1 which
+# has a bug: _pytest/capture.py calls tmpfile.seek(0) after Python 3.14's
+# GC has already closed the tmpfile, causing ValueError on session teardown.
+addopts = "-ra -q --tb=short --capture=sys"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [

@@ -115,10 +115,63 @@ class CustomLoopHarness:
         Returns:
             (ToolCallRecord, tool_result_string)
         """
+        # ── Defensive parsing (local models like Ollama may return malformed
+        #    tool_calls with missing keys, JSON-string args, or extra nesting) ──
+        try:
+            raw_name = tc.get("name") or tc.get("function", {}).get("name", "")
+            if not raw_name:
+                logger.error(
+                    "[DEFENSIVE] tool_call missing 'name' field — skipping. "
+                    "raw tc=%s", tc
+                )
+                return ToolCallRecord(
+                    call_id=tc.get("id", str(uuid.uuid4())),
+                    tool_name="<unknown>",
+                    tool_args={},
+                    reasoning_before=reasoning_before,
+                    iteration=iteration,
+                    result="[ERROR] Malformed tool_call: missing tool name",
+                ), "[ERROR] Malformed tool_call: missing tool name"
+
+            raw_args = tc.get("args") or tc.get("function", {}).get("arguments", {})
+
+            # Some local models return args as a JSON string instead of a dict
+            if isinstance(raw_args, str):
+                import json as _json
+                try:
+                    raw_args = _json.loads(raw_args)
+                except _json.JSONDecodeError as _je:
+                    logger.error(
+                        "[DEFENSIVE] Could not parse tool_call args as JSON string "
+                        "for tool=%s: %s | raw=%r", raw_name, _je, raw_args
+                    )
+                    raw_args = {}
+
+            if not isinstance(raw_args, dict):
+                logger.warning(
+                    "[DEFENSIVE] tool_call args is not a dict (type=%s) for "
+                    "tool=%s — treating as empty.", type(raw_args).__name__, raw_name
+                )
+                raw_args = {}
+
+        except Exception as _parse_exc:
+            logger.error(
+                "[DEFENSIVE] Unexpected error parsing tool_call structure: %s | "
+                "raw tc=%s", _parse_exc, tc
+            )
+            return ToolCallRecord(
+                call_id=str(uuid.uuid4()),
+                tool_name="<parse_error>",
+                tool_args={},
+                reasoning_before=reasoning_before,
+                iteration=iteration,
+                result=f"[ERROR] tool_call parse error: {_parse_exc}",
+            ), f"[ERROR] tool_call parse error: {_parse_exc}"
+
         record = ToolCallRecord(
             call_id=tc.get("id", str(uuid.uuid4())),
-            tool_name=tc["name"],
-            tool_args=tc.get("args", {}),
+            tool_name=raw_name,
+            tool_args=raw_args,
             reasoning_before=reasoning_before,
             iteration=iteration,
         )
@@ -156,6 +209,57 @@ class CustomLoopHarness:
             tool_result[:80],
         )
         return record, tool_result
+
+    @staticmethod
+    def _extract_reasoning(ai_msg: AIMessage, all_messages: list) -> str:
+        """
+        Extract the agent's reasoning text that preceded a tool call.
+
+        Identical fallback chain to AgentHarness._extract_reasoning():
+          1. AIMessage.content (standard).
+          2. additional_kwargs["reasoning_content"] — Ollama qwen3:8b / deepseek-r1.
+          3. additional_kwargs["thinking" / "thought"].
+          4. Anthropic-style thinking content block.
+          5. Previous non-empty AIMessage content.
+          6. Empty string.
+        """
+        # Source 1: standard content
+        content = ai_msg.content if isinstance(ai_msg.content, str) else ""
+        if content.strip():
+            return content
+
+        # Source 2 & 3: Ollama reasoning_content / thinking fields
+        extra = getattr(ai_msg, "additional_kwargs", {}) or {}
+        for key in ("reasoning_content", "thinking", "thought"):
+            cot = extra.get(key, "")
+            if isinstance(cot, str) and cot.strip():
+                logger.debug(
+                    "_extract_reasoning: found CoT in additional_kwargs[%r] (%d chars)",
+                    key, len(cot),
+                )
+                return cot
+
+        # Source 4: Anthropic thinking content block
+        if isinstance(ai_msg.content, list):
+            for block in ai_msg.content:
+                if isinstance(block, dict) and block.get("type") == "thinking":
+                    thinking = block.get("thinking", "")
+                    if thinking:
+                        return thinking
+
+        # Source 5: previous AIMessage with non-empty content
+        for msg in reversed(all_messages[:-1]):
+            if isinstance(msg, AIMessage):
+                prev_content = msg.content if isinstance(msg.content, str) else ""
+                if prev_content.strip():
+                    logger.debug(
+                        "_extract_reasoning: falling back to previous AIMessage "
+                        "content (%d chars)", len(prev_content),
+                    )
+                    return prev_content
+
+        # Source 6: no signal
+        return ""
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -216,10 +320,11 @@ class CustomLoopHarness:
                     break
 
                 # ── Execute all tool calls in this response ───────────────────
+                # Extract reasoning using multi-source fallback to handle Ollama
+                # CoT models (qwen3:8b, deepseek-r1) that return empty content
+                # with reasoning in additional_kwargs["reasoning_content"].
+                reasoning_before = self._extract_reasoning(response, messages)
                 for tc in response.tool_calls:
-                    reasoning_before = (
-                        response.content if isinstance(response.content, str) else ""
-                    )
                     record, tool_result = self._execute_tool_call(
                         tc, reasoning_before, iteration
                     )

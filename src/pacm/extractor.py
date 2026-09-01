@@ -41,6 +41,66 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
+# ─── CoT reasoning tag patterns (Session 9) ───────────────────────────────────
+#
+# Local CoT models (qwen3:8b, deepseek-r1, phi-4-reasoning, etc.) emit
+# internal chain-of-thought blocks that must be stripped before intent
+# extraction. If these tags are left in, the divergence scorer sees the
+# model's *private reasoning* as the intent text, which both degrades
+# extraction accuracy and inflates semantic similarity with the action.
+#
+# Supported tag formats:
+#   <think> ... </think>        — qwen3, deepseek-r1
+#   <Think> ... </Think>        — case variants
+#   [THINK] ... [/THINK]        — some llama / mistral fine-tunes
+#   <|thinking|> ... <|/thinking|>  — phi-4-reasoning
+#   <!-- think --> ... <!-- /think --> — rare markdown CoT wrappers
+
+_COT_TAG_PATTERNS: list[re.Pattern] = [
+    # XML-style tags (case-insensitive, greedy across newlines)
+    re.compile(r"<think[^>]*>.*?</think>", re.I | re.DOTALL),
+    # Bracket-style tags
+    re.compile(r"\[THINK\].*?\[/THINK\]", re.I | re.DOTALL),
+    # Pipe-delimited special tokens (phi-4-reasoning style)
+    re.compile(r"<\|thinking\|>.*?<\|/thinking\|>", re.I | re.DOTALL),
+    # HTML comment wrapper
+    re.compile(r"<!--\s*think\s*-->.*?<!--\s*/think\s*-->", re.I | re.DOTALL),
+]
+
+
+def strip_cot_tags(text: str) -> str:
+    """
+    Remove all CoT reasoning blocks from *text* and return the cleaned string.
+
+    This is a pure function — it does not modify any state. The patterns
+    above are applied sequentially; leftover whitespace is collapsed to a
+    single space and the result is stripped.
+
+    Args:
+        text: Raw AIMessage.content that may contain <think>…</think> blocks.
+
+    Returns:
+        Text with all CoT blocks removed and surrounding whitespace normalised.
+
+    Examples::
+
+        >>> strip_cot_tags("<think>internal reasoning</think>I will call send_email.")
+        'I will call send_email.'
+
+        >>> strip_cot_tags("[THINK]\nstep 1: ...\n[/THINK]  Reply to Alice.")
+        'Reply to Alice.'
+
+        >>> strip_cot_tags("No CoT tags here.")  # passthrough
+        'No CoT tags here.'
+    """
+    for pattern in _COT_TAG_PATTERNS:
+        text = pattern.sub("", text)
+    # Collapse runs of whitespace / blank lines left behind after removal
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r" {2,}", " ", text)
+    return text.strip()
+
+
 # ─── Data model ───────────────────────────────────────────────────────────────
 
 
@@ -132,6 +192,12 @@ class IntentExtractor:
         """
         Extract a DeclaredIntent from a reasoning trace.
 
+        CoT reasoning blocks (``<think>…</think>``, ``[THINK]…[/THINK]``,
+        ``<|thinking|>…<|/thinking|>``) produced by local models such as
+        qwen3:8b and deepseek-r1 are stripped **before** any pattern matching.
+        The original text (including CoT blocks) is preserved in
+        ``DeclaredIntent.raw_reasoning`` for audit purposes.
+
         Args:
             reasoning_text: The AIMessage.content that preceded the tool call.
                             May be empty (e.g. tool-only responses).
@@ -150,7 +216,29 @@ class IntentExtractor:
                 confidence=0.0,
             )
 
-        text = reasoning_text.strip()
+        # ── Strip CoT reasoning blocks before any parsing ─────────────────────
+        # Local CoT models (qwen3:8b, deepseek-r1, phi-4) emit <think>…</think>
+        # blocks that contain private chain-of-thought.  These must be removed
+        # so that the extracted intent reflects the agent's *stated* goal, not
+        # its internal scratchpad.  The raw original is kept for auditing.
+        raw_text = reasoning_text.strip()
+        text = strip_cot_tags(raw_text)
+
+        # If stripping left nothing meaningful, fall back to raw
+        if not text:
+            logger.debug(
+                "IntentExtractor: CoT stripping removed entire trace for tool=%s"
+                " — falling back to raw text.", tool_name
+            )
+            text = raw_text
+
+        cot_was_present = text != raw_text
+        if cot_was_present:
+            logger.debug(
+                "IntentExtractor: stripped CoT block(s) from reasoning trace "
+                "(tool=%s). Cleaned length: %d → %d chars.",
+                tool_name, len(raw_text), len(text),
+            )
 
         # ── Step 1: Extract target tool name ─────────────────────────────────
         extracted_tool, tool_confidence = self._extract_tool_name(text, tool_name)
@@ -162,9 +250,10 @@ class IntentExtractor:
         params_summary = self._extract_params(text)
 
         logger.debug(
-            "IntentExtractor: tool=%s (conf=%.2f) goal=%s...",
+            "IntentExtractor: tool=%s (conf=%.2f) cot_stripped=%s goal=%s...",
             extracted_tool,
             tool_confidence,
+            cot_was_present,
             declared_goal[:50],
         )
 
@@ -172,8 +261,9 @@ class IntentExtractor:
             target_tool=extracted_tool,
             declared_goal=declared_goal,
             expected_params_summary=params_summary,
-            raw_reasoning=text,
+            raw_reasoning=raw_text,   # preserve original with CoT tags intact
             confidence=tool_confidence,
+            extra={"cot_stripped": cot_was_present},
         )
 
     def extract_from_record(self, record: Any) -> DeclaredIntent:

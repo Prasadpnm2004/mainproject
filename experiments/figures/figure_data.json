@@ -130,97 +130,13 @@
         "label": "undefended/langgraph/ignore_previous",
         "policy_key": null,
         "mode": "undefended",
-        "lat_ms": 5.8
+        "lat_ms": 220324.90000000002
       },
       {
         "label": "defended/langgraph/ignore_previous/standard",
         "policy_key": "standard",
         "mode": "defended",
-        "lat_ms": 4.3
-      },
-      {
-        "label": "defended/langgraph/ignore_previous/conservative",
-        "policy_key": "conservative",
-        "mode": "defended",
-        "lat_ms": 4.4
-      },
-      {
-        "label": "defended/langgraph/ignore_previous/aggressive",
-        "policy_key": "aggressive",
-        "mode": "defended",
-        "lat_ms": 4.4
-      },
-      {
-        "label": "undefended/langgraph/injec_agent",
-        "policy_key": null,
-        "mode": "undefended",
-        "lat_ms": 6.0
-      },
-      {
-        "label": "defended/langgraph/injec_agent/standard",
-        "policy_key": "standard",
-        "mode": "defended",
-        "lat_ms": 5.8
-      },
-      {
-        "label": "defended/langgraph/injec_agent/conservative",
-        "policy_key": "conservative",
-        "mode": "defended",
-        "lat_ms": 4.7
-      },
-      {
-        "label": "defended/langgraph/injec_agent/aggressive",
-        "policy_key": "aggressive",
-        "mode": "defended",
-        "lat_ms": 4.0
-      },
-      {
-        "label": "undefended/custom_loop/ignore_previous",
-        "policy_key": null,
-        "mode": "undefended",
-        "lat_ms": 1.1
-      },
-      {
-        "label": "defended/custom_loop/ignore_previous/standard",
-        "policy_key": "standard",
-        "mode": "defended",
-        "lat_ms": 2.0
-      },
-      {
-        "label": "defended/custom_loop/ignore_previous/conservative",
-        "policy_key": "conservative",
-        "mode": "defended",
-        "lat_ms": 1.3
-      },
-      {
-        "label": "defended/custom_loop/ignore_previous/aggressive",
-        "policy_key": "aggressive",
-        "mode": "defended",
-        "lat_ms": 2.2
-      },
-      {
-        "label": "undefended/custom_loop/injec_agent",
-        "policy_key": null,
-        "mode": "undefended",
-        "lat_ms": 1.0
-      },
-      {
-        "label": "defended/custom_loop/injec_agent/standard",
-        "policy_key": "standard",
-        "mode": "defended",
-        "lat_ms": 1.6
-      },
-      {
-        "label": "defended/custom_loop/injec_agent/conservative",
-        "policy_key": "conservative",
-        "mode": "defended",
-        "lat_ms": 2.2
-      },
-      {
-        "label": "defended/custom_loop/injec_agent/aggressive",
-        "policy_key": "aggressive",
-        "mode": "defended",
-        "lat_ms": 2.3
+        "lat_ms": 257716.3
       }
     ]
   },

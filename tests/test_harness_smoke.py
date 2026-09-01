@@ -309,3 +309,57 @@ class TestRunResult:
         """Run time is recorded and positive."""
         result = self._make_result()
         assert result.wall_time_s > 0
+
+
+# ─── _extract_reasoning unit tests ───────────────────────────────────────────
+
+
+class TestExtractReasoning:
+    """Unit tests for AgentHarness._extract_reasoning() multi-source fallback."""
+
+    @pytest.fixture
+    def harness(self):
+        """Return a configured AgentHarness instance (no real LLM needed)."""
+        return AgentHarness(llm=_FakeLLMNoTool(), tools=[echo_tool])
+
+    def test_source1_standard_content(self, harness):
+        """Source 1: non-empty AIMessage.content is returned directly."""
+        msg = AIMessage(content="I will call send_email to notify Alice.", tool_calls=[])
+        result = harness._extract_reasoning(msg, [msg])
+        assert result == "I will call send_email to notify Alice."
+
+    def test_source2_reasoning_content_kwarg(self, harness):
+        """Source 2: Ollama reasoning_content in additional_kwargs is used when content is empty."""
+        msg = AIMessage(content="", tool_calls=[])
+        msg.additional_kwargs["reasoning_content"] = "<think>Plan: call send_email</think>"
+        result = harness._extract_reasoning(msg, [msg])
+        assert "call send_email" in result
+
+    def test_source2_thinking_kwarg(self, harness):
+        """Source 2: 'thinking' key in additional_kwargs is also accepted."""
+        msg = AIMessage(content="", tool_calls=[])
+        msg.additional_kwargs["thinking"] = "I should read the inbox first."
+        result = harness._extract_reasoning(msg, [msg])
+        assert "inbox" in result
+
+    def test_source3_anthropic_thinking_block(self, harness):
+        """Source 3: Anthropic-style thinking block inside content list."""
+        msg = AIMessage(
+            content=[{"type": "thinking", "thinking": "Step 1: read inbox. Step 2: reply."}],
+            tool_calls=[],
+        )
+        result = harness._extract_reasoning(msg, [msg])
+        assert "Step 1" in result
+
+    def test_source4_previous_ai_message(self, harness):
+        """Source 4: falls back to previous AIMessage when current content is empty."""
+        prev = AIMessage(content="I'm going to summarise the inbox.", tool_calls=[])
+        curr = AIMessage(content="", tool_calls=[{"name": "read_inbox", "args": {}, "id": "c1"}])
+        result = harness._extract_reasoning(curr, [prev, curr])
+        assert "summarise the inbox" in result
+
+    def test_source5_no_signal_returns_empty(self, harness):
+        """Source 5: returns empty string when no reasoning signal is found."""
+        msg = AIMessage(content="", tool_calls=[])
+        result = harness._extract_reasoning(msg, [msg])
+        assert result == ""

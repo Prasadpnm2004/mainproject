@@ -286,6 +286,77 @@ class AgentHarness:
         logger.debug("Agent response (iter %d): %s", iterations, response.content)
         return {"messages": [response], "iterations": iterations + 1}
 
+    def _extract_reasoning(
+        self,
+        ai_msg: AIMessage,
+        all_messages: list,
+    ) -> str:
+        """
+        Extract the agent's reasoning text that preceded a tool call.
+
+        Priority order (highest → lowest confidence):
+          1. ``ai_msg.content`` — standard reasoning in the tool-call message.
+          2. ``ai_msg.additional_kwargs["reasoning_content"]`` — Ollama qwen3:8b
+             and deepseek-r1 return their ``<think>`` block here separately.
+          3. Concatenated ``<think>`` blocks from additional_kwargs that Ollama
+             sometimes puts in ``additional_kwargs["thinking"]``.
+          4. The last *substantive* (non-tool-call-only) AIMessage content earlier
+             in the conversation — the agent often explains itself one turn before
+             calling a tool.
+          5. Empty string (no reasoning captured).
+
+        Args:
+            ai_msg:      The AIMessage that contains the tool calls.
+            all_messages: Full conversation message list (oldest → newest).
+
+        Returns:
+            Best available reasoning text (may still be empty if no signal found).
+        """
+        # ── Source 1: standard content ────────────────────────────────────────
+        content = ai_msg.content if isinstance(ai_msg.content, str) else ""
+        if content.strip():
+            return content
+
+        # ── Source 2: Ollama reasoning_content field ──────────────────────────
+        # qwen3:8b with Ollama returns chain-of-thought in additional_kwargs
+        # under 'reasoning_content' (mirrors OpenAI o1's field name).
+        extra = getattr(ai_msg, "additional_kwargs", {}) or {}
+        for key in ("reasoning_content", "thinking", "thought"):
+            cot = extra.get(key, "")
+            if isinstance(cot, str) and cot.strip():
+                logger.debug(
+                    "_extract_reasoning: found CoT in additional_kwargs[%r] (%d chars)",
+                    key, len(cot),
+                )
+                return cot
+
+        # ── Source 3: tool_use_block thinking (Anthropic-style) ───────────────
+        # Some APIs embed thinking as a list of content blocks.
+        if isinstance(ai_msg.content, list):
+            for block in ai_msg.content:
+                if isinstance(block, dict) and block.get("type") == "thinking":
+                    thinking = block.get("thinking", "")
+                    if thinking:
+                        return thinking
+
+        # ── Source 4: look back at previous AI messages ───────────────────────
+        # The agent often emits a reasoning message immediately before the
+        # tool-call message.  Walk backwards to find the last AIMessage with
+        # non-empty content that isn't this same message.
+        for msg in reversed(all_messages[:-1]):
+            if isinstance(msg, AIMessage):
+                prev_content = msg.content if isinstance(msg.content, str) else ""
+                if prev_content.strip():
+                    logger.debug(
+                        "_extract_reasoning: falling back to previous AIMessage "
+                        "content (%d chars)", len(prev_content),
+                    )
+                    return prev_content
+
+        # ── Source 5: no signal ───────────────────────────────────────────────
+        logger.debug("_extract_reasoning: no reasoning signal found for tool call.")
+        return ""
+
     def _instrumented_tool_node(self, state: AgentState) -> dict[str, Any]:
         """
         Execute tool calls from the latest AIMessage, applying hooks.
@@ -299,9 +370,14 @@ class AgentHarness:
         """
         messages = state["messages"]
         last_ai_msg: AIMessage = messages[-1]  # type: ignore[assignment]
-        reasoning_before = (
-            last_ai_msg.content if isinstance(last_ai_msg.content, str) else ""
-        )
+
+        # ── Reasoning extraction (multi-source fallback) ──────────────────────
+        # qwen3:8b and other Ollama CoT models return empty AIMessage.content
+        # when making tool calls — the thinking goes into <think>...</think>
+        # blocks.  With the Ollama OpenAI-compatible API, reasoning may appear
+        # in additional_kwargs["reasoning_content"] or we fall back to scanning
+        # earlier messages for the last substantive AI turn.
+        reasoning_before = self._extract_reasoning(last_ai_msg, messages)
 
         tool_messages: list[ToolMessage] = []
         records: list[ToolCallRecord] = list(state.get("tool_call_records", []))

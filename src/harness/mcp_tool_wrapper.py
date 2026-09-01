@@ -305,6 +305,54 @@ class MCPWrappedTool(BaseTool):
             self.description = self.wrapped_tool.description
         return self
 
+    # ── Argument alias normaliser ─────────────────────────────────────────────
+
+    @staticmethod
+    def _normalise_args(args: dict) -> dict:
+        """
+        Remap common field-name aliases that local LLMs (e.g. qwen3:8b) produce
+        instead of the exact schema names.  Applied before pydantic validation.
+
+        Aliases are only remapped when the original alias is not a valid field
+        name in the args dict that maps to a known schema field.  This prevents
+        over-eager remapping (e.g. 'text' → 'body' breaking echo_tool which
+        legitimately expects 'text').
+
+        Aliases handled:
+            recipient, email, address  → to       (email tools)
+            message, content          → body      (email tools, body-taking)
+            title, topic              → subject   (email tools)
+            for_date, day             → date      (calendar tools)
+        """
+        if not isinstance(args, dict):
+            return args
+        out = dict(args)
+        # Only remap 'to' if 'to' is absent AND the alias is the only address-like key
+        if "to" not in out:
+            for alias in ("recipient", "email", "address"):
+                if alias in out:
+                    out["to"] = out.pop(alias)
+                    break
+        # Only remap body aliases that are unambiguously body (NOT 'text' which is legitimate)
+        if "body" not in out:
+            for alias in ("message", "content"):  # deliberately excludes 'text'
+                if alias in out:
+                    out["body"] = out.pop(alias)
+                    break
+        # Remap subject aliases
+        if "subject" not in out:
+            for alias in ("title", "topic"):
+                if alias in out:
+                    out["subject"] = out.pop(alias)
+                    break
+        # Remap date aliases
+        if "date" not in out:
+            for alias in ("for_date", "day"):
+                if alias in out:
+                    out["date"] = out.pop(alias)
+                    break
+        return out
+
     # ── BaseTool abstract method ──────────────────────────────────────────────
 
     def _run(self, *args: Any, **kwargs: Any) -> str:
@@ -324,6 +372,12 @@ class MCPWrappedTool(BaseTool):
         call_id = str(uuid.uuid4())
         jsonrpc_req = make_jsonrpc_request(self.name, tool_args, call_id)
         is_error = False
+
+        # ── Normalise common field-name aliases from local LLMs ───────────────
+        # Models like qwen3:8b sometimes generate 'recipient' instead of 'to',
+        # 'message' instead of 'body', etc.  Map these before invoking the tool
+        # schema so pydantic validation does not fail needlessly.
+        tool_args = self._normalise_args(tool_args)
 
         t0 = time.perf_counter()
         try:

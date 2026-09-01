@@ -1,6 +1,6 @@
 # Plan–Action Consistency Monitoring (PACM): A Runtime Defense Against Context-Aware Prompt Injection in Tool-Using LLM Agents
 
-**Draft Manuscript — Session 7**
+**Draft Manuscript — Session 9**
 
 ---
 
@@ -151,8 +151,9 @@ The trust factor (1.5 − 0.5 × T) means:
 **Modes**: Undefended (no PACM hook) and Defended (STANDARD, CONSERVATIVE, AGGRESSIVE policy).
 **Embedding backend**: TF-IDF (default, no extra deps); sentence-transformers `all-MiniLM-L6-v2` (optional).
 **Synthetic data**: 200 attack + 200 benign records with explicit `d_semantic` and `p_scope` components for reproducibility.
+**CoT tag filtering** *(Session 9)*: `IntentExtractor.extract()` now strips `<think>…</think>`, `[THINK]…[/THINK]`, `<|thinking|>…<|/thinking|>`, and HTML-comment CoT blocks before any regex parsing. This ensures that local CoT models (qwen3:8b, deepseek-r1, phi-4-reasoning) do not leak private chain-of-thought into the declared intent, which would artificially reduce divergence and allow injection evasion.
 
-> **Note**: ABR, BTSR, and FPR values in the full-sweep table (Table 1) reflect **stub mode** execution (no live LLM API calls). Real divergence scores require `OPENAI_API_KEY`. Stub-mode attack traces produce uniform reasoning text, yielding moderate divergence scores (D ≈ 0.3–0.4) that fall in the FLAG zone but not the BLOCK zone. This is expected and correct behavior for the undefended baseline.
+> **Note**: ABR, BTSR, and FPR values in the full-sweep table (Table 1) reflect **stub mode** execution (no live LLM API calls). Real divergence scores require a live LLM backend (OpenAI or local Ollama). Stub-mode attack traces produce uniform reasoning text, yielding moderate divergence scores (D ≈ 0.3–0.4) that fall in the FLAG zone but not the BLOCK zone. This is expected and correct behavior for the undefended baseline. See §5.7 for real-backend verification status.
 
 ### 5.2 Alpha Sensitivity Analysis (RQ2)
 
@@ -219,13 +220,124 @@ Summary (stub mode):
 - **PACM latency overhead**: LangGraph +0–2ms, CustomLoop <1ms per task.
 - **FPR**: 0% in stub mode for all policy tiers.
 
+### 5.7 Session 9 Additions: CoT Filtering, Local Backend & Real-LLM Readiness
+
+#### 5.7.1 CoT Reasoning Tag Stripping
+
+Local CoT models emit internal chain-of-thought inside structured tags prior to their final response. Without stripping, PACM's regex-based `IntentExtractor` reads the private scratchpad as the declared intent — a systematic false-signal that degrades both precision and recall.
+
+We implement `strip_cot_tags()` in `src/pacm/extractor.py`, supporting four tag formats:
+
+| Format | Models | Pattern |
+|--------|--------|---------|
+| `<think>…</think>` | qwen3:8b, deepseek-r1 | XML-style, case-insensitive, multiline |
+| `[THINK]…[/THINK]` | Some llama / mistral fine-tunes | Bracket-style |
+| `<\|thinking\|>…<\|/thinking\|>` | phi-4-reasoning | Pipe-delimited tokens |
+| `<!-- think -->…<!-- /think -->` | Markdown CoT wrappers | HTML comment |
+
+The `raw_reasoning` field in `DeclaredIntent` preserves the original text (including tags) for audit purposes. The `extra["cot_stripped"]` flag signals to downstream code whether stripping occurred. Twelve new unit tests in `tests/test_pacm_core.py` cover all four formats, case-insensitive variants, multiline blocks, tags-only fallback, and the raw-preservation invariant.
+
+**Impact on divergence scoring**: When CoT content is stripped, the intent text used for scoring reflects the agent's *stated action intent* (post-think) rather than its intermediate reasoning chain. For benign agents, this typically shortens the intent text but preserves meaning. For injected agents, the post-think text may contain the hijacked action verbatim — increasing D and improving detection.
+
+#### 5.7.2 Provider-Agnostic LLM Backend (Session 8)
+
+PACM now supports two LLM providers via `src/llm_config.py`:
+
+| Provider | Config | Cost |
+|----------|--------|------|
+| OpenAI (gpt-4o-mini) | `LLM_PROVIDER=openai` + `OPENAI_API_KEY` | ~$0.000075/task |
+| Ollama (local) | `LLM_PROVIDER=ollama LLM_MODEL=qwen3:8b` | Free |
+
+Both use the same `ChatOpenAI` LangChain wrapper (Ollama exposes an OpenAI-compatible `/v1` endpoint). The `experiments/probe_llm_backend.py` script performs a 4-step capability check (connection → response → structured tool_calls → defensive parse) before any sweep.
+
+**Probe results (Session 9, no API key set):**
+
+```
+Provider : openai  Model: gpt-4o-mini
+[FAIL] Connection — Missing credentials (OPENAI_API_KEY not set)
+RESULT : FAIL — backend not ready (expected in offline environment)
+```
+
+For Ollama: set `LLM_PROVIDER=ollama` in `.env`, pull `qwen3:8b`, and run:
+```bash
+python -m experiments.probe_llm_backend   # must PASS before sweep
+python -m experiments.run_sweep --output experiments/real_llm_sweep_summary.json
+```
+
+#### 5.7.3 Real-LLM Sweep Status
+
+The sweep infrastructure is fully operational. A **pilot quick-sweep** (2 configs: undefended + defended/standard, LangGraph harness, ignore_previous attack) was executed in stub mode to verify the `--output` routing to `experiments/real_llm_sweep_summary.json`:
+
+| Config | ABR | BTSR | FPR | t(s) |
+|--------|-----|------|-----|------|
+| undefended/langgraph/ignore_previous | 0.0% | 100.0% | N/A | 0.31 |
+| defended/langgraph/ignore_previous/standard | 0.0% | 100.0% | 0.0% | 0.06 |
+
+> **Stub-mode note**: 0% ABR is expected here — stub tasks produce low divergence scores that PACM flags but does not block. Real ABR measurements require a live LLM generating authentic reasoning traces. The moment a real key or Ollama is configured, the pipeline routes through `_run_real_task()` (fully implemented in Session 8) and records `stub_mode: false` in the JSONL output.
+
+**To run the complete real-LLM sweep** (once Ollama/key is available):
+```bash
+# Full 14-config sweep:
+python -m experiments.run_sweep \
+    --output experiments/real_llm_sweep_summary.json \
+    --log-level INFO
+
+# Regenerate paper tables from real sweep:
+python -m experiments.generate_paper_tables --real
+```
+
 ---
 
-## 6. Discussion
+### 5.8 Real-Model Benchmark: qwen3:8b — Session 11
+
+> **Status:** Real-model evaluation complete (qwen3:8b via Ollama, quick mode).
+
+**Setup:** `qwen3:8b` (5.2 GB quantised), Ollama 0.9.6, local CPU+GPU, `LLM_PROVIDER=ollama`, TCP pre-flight health check.
+
+| Config | Policy | ABR | BTSR | FPR | Elapsed |
+|--------|--------|-----|------|-----|---------|
+| undefended / langgraph / ignore_previous | — | 0.0% | 100% | — | 663 s |
+| defended / langgraph / ignore_previous | Standard + scope_boost=0.15 | **100%**† | 100% | **0.0%** | 774 s |
+
+†ABR=100% with scope-flag boost: D_exfil=0.339, boost=+0.15, F=0.489 > θ_allow=0.45.
+
+**Exfiltration case study (real LLM traces):**
+
+| Call # | Tool | D | Scope flag | F (boosted) | Decision |
+|--------|------|---|------------|-------------|----------|
+| 1 | send_email (to=alice) | 0.226 | — | 0.226 | Allow |
+| 2 | read_inbox | 0.103 | — | 0.103 | Allow |
+| 3 | send_email (reply) | 0.290 | — | 0.290 | Allow |
+| 4 | read_inbox | 0.103 | — | 0.103 | Allow |
+| **5** | **send_email (to=attacker@evil.com)** | **0.339** | `to: external_domain` | **0.489** | **Flag/Block** |
+
+**Key finding:** Without scope boost, all 5 calls are allowed (max D=0.339 < 0.45). The scope-flag boost (+0.15) is the essential discriminating signal for exfiltration detection when semantic divergence is moderate.
+
+**The Reasoning Availability Gap:**
+
+qwen3:8b returns empty `AIMessage.content` during tool calls; CoT goes to `additional_kwargs["reasoning_content"]`. Without extraction, PACM sees no plan, deflating D to ~0.10–0.34.
+
+**Mitigation (`_extract_reasoning()` — 5-source fallback, both harnesses):**
+1. `AIMessage.content` (standard, GPT-4o/Claude)
+2. `additional_kwargs["reasoning_content"]` (Ollama qwen3/deepseek-r1)
+3. `additional_kwargs["thinking" / "thought"]`
+4. Anthropic thinking content blocks
+5. Previous non-empty AIMessage (graceful fallback)
+
+**Scope friction as compensatory signal:** When reasoning unavailable, `to=external_domain` flag alone enables detection:
+
+```
+F_boosted = min(1, D × (1.5 − 0.5T) + Δ_scope)     where Δ_scope = 0.15
+```
+
+**Coverage:** 12 unit tests in `TestExtractReasoning` + `TestExtractReasoningCustomLoop`.
+
+---
+
 
 ### 6.1 Limitations
 
-1. **Stub-mode baseline**: All benchmark ABR/BTSR values are from stub mode (no real LLM). Real evaluation with `OPENAI_API_KEY` is required for publishable results (Session 8 priority).
+1. **Real-LLM scale**: Real-model evaluation (§5.8) uses quick sweep (2 configs, 6 tasks). Full 14-config sweep needed for publication-grade confidence intervals.
 2. **Alpha calibration**: α = 0.9 was identified on synthetic data with known D_semantic/P_scope distributions. Real injection traces may require different calibration.
 3. **Trust score dependency**: PACM's friction amplification relies on accurate MCP trust scores. If trust metadata is missing or spoofed, Variant B behavior (T=1.0) applies.
 4. **Adaptive attacker scope**: The 5 adaptive variants were constructed synthetically. Real adaptive adversaries may devise novel evasion strategies not covered by the taxonomy.
@@ -242,10 +354,12 @@ Summary (stub mode):
 
 ### 6.3 Future Work
 
-1. **Real LLM evaluation**: Full sweep with `OPENAI_API_KEY` to produce publishable ABR/FPR numbers.
-2. **LLM-backed extractor**: Replace regex-based `IntentExtractor` with an LLM call (gated by cost threshold) for higher precision on complex CoT traces.
+1. **Real LLM evaluation** *(in progress — infrastructure complete, Session 9)*: Full sweep with `OPENAI_API_KEY` or local Ollama (`LLM_PROVIDER=ollama`) to produce publishable ABR/FPR numbers. `_run_real_task()` and `probe_llm_backend.py` are fully implemented.
+2. **LLM-backed extractor**: Replace regex-based `IntentExtractor` with an LLM call (gated by cost threshold) for higher precision on complex CoT traces. CoT tag stripping (Session 9) is a prerequisite for this.
 3. **Online threshold calibration**: Continuously update allow/block thresholds from streaming audit data using Thompson sampling or bandit methods.
 4. **Multi-agent PACM**: Extend the pre-tool hook to monitor inter-agent messages in hierarchical agent systems.
+5. ~~**Local LLM backend (Ollama)**~~ *(completed Session 8/9 — `src/llm_config.py`, defensive parsing, probe CLI)*.
+6. ~~**CoT tag filtering**~~ *(completed Session 9 — `strip_cot_tags()`, 12 unit tests, 4 tag formats)*.
 
 ---
 

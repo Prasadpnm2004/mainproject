@@ -231,6 +231,7 @@ class PACMMiddleware:
             divergence_score=divergence_score,
             trust_score=trust_score,
             tool_name=tool_name,
+            scope_flags=scope_flags or None,
         )
 
         # ── Legacy policy_mode override (backward-compat) ─────────────────────

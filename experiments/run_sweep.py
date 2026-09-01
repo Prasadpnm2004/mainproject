@@ -140,9 +140,10 @@ def run_sweep(
     attacks: list[str] = DEFAULT_ATTACKS,
     modes: list[str] = DEFAULT_MODES,
     policies: list[str] = DEFAULT_POLICIES,
-    model_name: str = "gpt-4o-mini",
+    model_name: str | None = None,
     max_iter: int = 5,
     append_jsonl: bool = True,
+    output_path: Optional[Path] = None,
 ) -> dict[str, Any]:
     """
     Execute the full sweep and return a sweep summary dict.
@@ -152,23 +153,33 @@ def run_sweep(
         attacks:      List of attack type filters.
         modes:        ["undefended", "defended"] or subset.
         policies:     Policy keys from POLICY_CONFIGS (defended only).
-        model_name:   LLM model name (stub if no API key).
+        model_name:   LLM model name.  If None, read from LLM_MODEL / llm_config.
         max_iter:     Max harness iterations per task.
         append_jsonl: If True, append raw records to pacm_results.jsonl.
+        output_path:  Where to write sweep_summary JSON.  Defaults to
+                      experiments/sweep_summary.json.
 
     Returns:
         Sweep summary dict with per-run MetricsReports.
     """
     from experiments.run_experiment import run_experiment, write_results
     from experiments.metrics import MetricsProcessor, MetricsReport
+    from src.llm_config import load_llm_config
+
+    _llm_cfg = load_llm_config()
+    if model_name is None:
+        model_name = _llm_cfg.model
+
+    out_path = output_path or SWEEP_SUMMARY_PATH
 
     configs = build_sweep_matrix(harnesses, attacks, modes, policies)
     sweep_start = datetime.now(timezone.utc).isoformat()
     sweep_id = str(uuid.uuid4())[:8]
 
     print(f"\n{'='*72}")
-    print(f"  PACM Session 5 — Automated Sweep")
+    print(f"  PACM Session 5/9 — Automated Sweep")
     print(f"  sweep_id={sweep_id}  configs={len(configs)}")
+    print(f"  provider={_llm_cfg.provider}  model={model_name}")
     print(f"  harnesses={harnesses}  attacks={attacks}")
     print(f"  modes={modes}  policies={policies}")
     print(f"{'='*72}\n")
@@ -235,14 +246,15 @@ def run_sweep(
             "modes": modes,
             "policies": policies,
             "model": model_name,
+            "llm_provider": _llm_cfg.provider,
         },
         "runs": run_summaries,
     }
 
     # Save sweep summary
-    with open(SWEEP_SUMMARY_PATH, "w", encoding="utf-8") as fh:
+    with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(sweep_summary, fh, indent=2, default=str)
-    print(f"\n  Sweep summary written -> {SWEEP_SUMMARY_PATH}")
+    print(f"\n  Sweep summary written -> {out_path}")
 
     return sweep_summary
 
@@ -290,8 +302,8 @@ if __name__ == "__main__":
         choices=list(POLICY_CONFIGS.keys()),
     )
     parser.add_argument(
-        "--model", default="gpt-4o-mini",
-        help="LLM model (stub if no API key).",
+        "--model", default=None,
+        help="LLM model (default: read from LLM_MODEL env-var / llm_config).",
     )
     parser.add_argument(
         "--max-iter", type=int, default=5,
@@ -299,6 +311,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--quick", action="store_true",
         help="Quick mode: 1 harness, 1 attack, 1 policy.",
+    )
+    parser.add_argument(
+        "--output", default=None,
+        help=(
+            "Path to write sweep summary JSON. "
+            "Default: experiments/sweep_summary.json. "
+            "Use experiments/real_llm_sweep_summary.json for real-LLM runs."
+        ),
     )
     parser.add_argument(
         "--log-level", default="WARNING",
@@ -322,6 +342,8 @@ if __name__ == "__main__":
         modes     = args.modes
         policies  = args.policies
 
+    out_path = Path(args.output) if args.output else None
+
     summary = run_sweep(
         harnesses=harnesses,
         attacks=attacks,
@@ -329,5 +351,6 @@ if __name__ == "__main__":
         policies=policies,
         model_name=args.model,
         max_iter=args.max_iter,
+        output_path=out_path,
     )
     print_sweep_table(summary)

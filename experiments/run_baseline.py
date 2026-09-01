@@ -110,16 +110,16 @@ def run_agentdojo_baseline(
     NullLogger.logdir = None
 
     # ── Build LLM backend ────────────────────────────────────────────────────
-    if model_name.startswith("gpt"):
-        from agentdojo.agent_pipeline.llms.openai_llm import OpenAILLM
-        import openai
-        llm = OpenAILLM(client=openai.OpenAI(), model=model_name)
-    elif model_name.startswith("claude"):
+    from src.llm_config import load_llm_config, build_openai_client
+    _cfg = load_llm_config()
+    if model_name.startswith("claude"):
         from agentdojo.agent_pipeline.llms.anthropic_llm import AnthropicLLM
         import anthropic
         llm = AnthropicLLM(client=anthropic.Anthropic(), model=model_name)
     else:
-        raise SystemExit(f"Unsupported model prefix for AgentDojo mode: {model_name!r}")
+        # OpenAI-compatible path (works for both openai and ollama providers)
+        from agentdojo.agent_pipeline.llms.openai_llm import OpenAILLM
+        llm = OpenAILLM(client=build_openai_client(_cfg), model=model_name)
 
     # ── Build AgentDojo pipeline ─────────────────────────────────────────────
     # Standard AgentDojo tool-calling pipeline (undefended — no PACM middleware)
@@ -298,12 +298,18 @@ def run_stub_baseline(max_iter: int, harness_name: str = "langgraph") -> list[di
         },
     ]
 
-    # ── Try to use a real LLM if keys available, else report no-key error ─────
-    model_name = os.getenv("PACM_DEFAULT_MODEL", "gpt-4o-mini")
-    if model_name.startswith("gpt") and not os.getenv("OPENAI_API_KEY"):
+    # ── Provider-agnostic config (OpenAI or Ollama) ──────────────────────────
+    from src.llm_config import load_llm_config, build_chat_model, is_real_llm_available
+    _llm_cfg = load_llm_config()
+    # Override model from PACM_DEFAULT_MODEL / env if not supplied by caller
+    model_name = os.getenv("PACM_DEFAULT_MODEL", _llm_cfg.model)
+
+    if not is_real_llm_available(_llm_cfg):
         print(
-            "\n[STUB MODE] No OPENAI_API_KEY — recording stub-mode tasks as 'skipped'.\n"
-            "  Copy .env.template -> .env and add your API key to run real LLM tasks.\n"
+            f"\n[STUB MODE] No LLM available (provider={_llm_cfg.provider!r}).\n"
+            "  For OpenAI: set OPENAI_API_KEY in .env.\n"
+            "  For Ollama: set LLM_PROVIDER=ollama (Ollama must be running).\n"
+            "  Run: python -m experiments.probe_llm_backend  to verify.\n"
         )
         records = []
         session_meta = {
@@ -325,19 +331,17 @@ def run_stub_baseline(max_iter: int, harness_name: str = "langgraph") -> list[di
                 "wall_time_s": 0.0,
                 "tool_call_count": 0,
                 "skipped": True,
-                "skip_reason": "No API key — stub mode, LLM not invoked",
+                "skip_reason": f"No LLM available for provider={_llm_cfg.provider!r}",
             })
         return records
 
     # ── Real LLM with stub tools (MCP-wrapped) ────────────────────────────────
-    if model_name.startswith("gpt"):
-        from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(model=model_name, temperature=0)
-    elif model_name.startswith("claude"):
+    if model_name.startswith("claude"):
         from langchain_anthropic import ChatAnthropic
         llm = ChatAnthropic(model=model_name, temperature=0)  # type: ignore[call-arg]
     else:
-        raise SystemExit(f"Unsupported model: {model_name!r}")
+        # Covers both openai (gpt-*) and ollama (qwen3:8b, llama3.1:8b, etc.)
+        llm = build_chat_model(_llm_cfg, temperature=0)
 
     config = HarnessConfig(
         max_iterations=int(os.getenv("PACM_MAX_ITERATIONS", "10")),

@@ -220,3 +220,79 @@ class TestPresetPolicies:
         r_standard = STANDARD_POLICY.evaluate(0.4, 0.3)
         # Aggressive should be ≥ standard in terms of friction (same F, potentially different decisions)
         assert result.friction_score == r_standard.friction_score
+
+
+# ─── Scope-flag friction boost tests ──────────────────────────────────────────
+
+
+class TestScopeFlagBoost:
+    """Unit tests for scope_flags parameter friction boosting in FrictionPolicy."""
+
+    def _policy(self, boost: float = 0.15) -> FrictionPolicy:
+        return FrictionPolicy(allow_threshold=0.45, block_threshold=0.75, scope_boost=boost)
+
+    def test_boost_applied_with_external_domain_flag(self):
+        """scope_flags={'to': 'external_domain'} should add +0.15 to F."""
+        policy = self._policy()
+        no_flag  = policy.evaluate(0.30, 1.0, scope_flags=None)
+        with_flag = policy.evaluate(0.30, 1.0, scope_flags={"to": "external_domain"})
+        assert with_flag.friction_score == pytest.approx(no_flag.friction_score + 0.15, abs=1e-6)
+        assert with_flag.scope_boost == pytest.approx(0.15)
+
+    def test_boost_pushes_exfiltration_over_allow_threshold(self):
+        """Real sweep: D=0.339, T=1.0 → base F=0.339. With boost=0.15 → F=0.489 > 0.45 → FLAG."""
+        policy = self._policy()
+        # Without boost: D=0.339 → F=0.339 → ALLOW
+        no_boost = policy.evaluate(0.339, 1.0)
+        assert no_boost.decision == FrictionDecision.ALLOW
+
+        # With external_domain scope flag: F=0.489 → FLAG
+        with_boost = policy.evaluate(0.339, 1.0, scope_flags={"to": "external_domain"})
+        assert with_boost.decision != FrictionDecision.ALLOW
+        assert with_boost.friction_score == pytest.approx(0.339 + 0.15, abs=1e-6)
+
+    def test_multiple_scope_flags_do_not_double_boost(self):
+        """Even with multiple flags, boost is applied exactly once."""
+        policy = self._policy()
+        multi = policy.evaluate(
+            0.20, 1.0,
+            scope_flags={"to": "external_domain", "url": "external_domain"},
+        )
+        single = policy.evaluate(
+            0.20, 1.0,
+            scope_flags={"to": "external_domain"},
+        )
+        assert multi.friction_score == pytest.approx(single.friction_score, abs=1e-9)
+
+    def test_no_boost_without_scope_flags(self):
+        """scope_flags=None produces scope_boost=0.0."""
+        policy = self._policy()
+        result = policy.evaluate(0.50, 1.0, scope_flags=None)
+        assert result.scope_boost == pytest.approx(0.0)
+
+    def test_empty_scope_flags_dict_no_boost(self):
+        """scope_flags={} (empty dict) — falsy — produces no boost."""
+        policy = self._policy()
+        result = policy.evaluate(0.50, 1.0, scope_flags={})
+        assert result.scope_boost == pytest.approx(0.0)
+
+    def test_scope_boost_in_to_dict(self):
+        """scope_boost appears in serialised PolicyResult dict."""
+        policy = self._policy()
+        result = policy.evaluate(0.30, 1.0, scope_flags={"to": "external_domain"})
+        d = result.to_dict()
+        assert "scope_boost" in d
+        assert d["scope_boost"] == pytest.approx(0.15)
+
+    def test_custom_boost_value_respected(self):
+        """A custom scope_boost value is applied correctly."""
+        policy = FrictionPolicy(allow_threshold=0.45, block_threshold=0.75, scope_boost=0.25)
+        result = policy.evaluate(0.20, 1.0, scope_flags={"to": "external_domain"})
+        assert result.scope_boost == pytest.approx(0.25)
+        assert result.friction_score == pytest.approx(0.20 + 0.25, abs=1e-6)
+
+    def test_boost_reasoning_contains_scope_boost(self):
+        """Policy reasoning string mentions scope_boost when flags are present."""
+        policy = self._policy()
+        result = policy.evaluate(0.339, 1.0, scope_flags={"to": "external_domain"})
+        assert "scope_boost" in result.reasoning

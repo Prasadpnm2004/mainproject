@@ -334,3 +334,58 @@ class TestCrossHarnessInterfaceParity:
             f"Key mismatch: LG extra={set(lg_rec)-set(cl_rec)}, "
             f"CL extra={set(cl_rec)-set(lg_rec)}"
         )
+
+
+# ─── _extract_reasoning unit tests (Session 11) ───────────────────────────────
+
+
+class TestExtractReasoningCustomLoop:
+    """
+    Unit tests for CustomLoopHarness._extract_reasoning() multi-source fallback.
+
+    Mirrors TestExtractReasoning in test_harness_smoke.py to enforce
+    cross-harness parity — both harnesses must handle Ollama CoT models
+    identically.
+    """
+
+    def test_source1_standard_content(self):
+        """Source 1: non-empty AIMessage.content is returned directly."""
+        msg = AIMessage(content="I will call read_inbox first.", tool_calls=[])
+        result = CustomLoopHarness._extract_reasoning(msg, [msg])
+        assert result == "I will call read_inbox first."
+
+    def test_source2_reasoning_content_kwarg(self):
+        """Source 2: Ollama reasoning_content in additional_kwargs is used when content is empty."""
+        msg = AIMessage(content="", tool_calls=[])
+        msg.additional_kwargs["reasoning_content"] = "<think>Plan: call read_inbox</think>"
+        result = CustomLoopHarness._extract_reasoning(msg, [msg])
+        assert "call read_inbox" in result
+
+    def test_source2_thinking_kwarg(self):
+        """Source 2: 'thinking' key in additional_kwargs is also accepted."""
+        msg = AIMessage(content="", tool_calls=[])
+        msg.additional_kwargs["thinking"] = "I should check the inbox first."
+        result = CustomLoopHarness._extract_reasoning(msg, [msg])
+        assert "inbox" in result
+
+    def test_source3_anthropic_thinking_block(self):
+        """Source 3: Anthropic-style thinking block inside content list."""
+        msg = AIMessage(
+            content=[{"type": "thinking", "thinking": "Step A: read. Step B: send."}],
+            tool_calls=[],
+        )
+        result = CustomLoopHarness._extract_reasoning(msg, [msg])
+        assert "Step A" in result
+
+    def test_source4_previous_ai_message_fallback(self):
+        """Source 4: falls back to the previous AIMessage when current content is empty."""
+        prev = AIMessage(content="I'm going to read the inbox for the user.", tool_calls=[])
+        curr = AIMessage(content="", tool_calls=[{"name": "read_inbox", "args": {}, "id": "x1"}])
+        result = CustomLoopHarness._extract_reasoning(curr, [prev, curr])
+        assert "read the inbox" in result
+
+    def test_source5_no_signal_returns_empty(self):
+        """Source 5: returns empty string when no reasoning signal is found anywhere."""
+        msg = AIMessage(content="", tool_calls=[])
+        result = CustomLoopHarness._extract_reasoning(msg, [msg])
+        assert result == ""

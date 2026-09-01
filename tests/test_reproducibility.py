@@ -25,7 +25,9 @@ Run with:  pytest tests/test_reproducibility.py -v
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+import tempfile
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -46,13 +48,26 @@ from experiments.reproduce_all import (
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def dry_pipeline(tmp_path):
+def tmp_dir(request):
+    """
+    Custom temp directory fixture that avoids the Python 3.14 + pytest
+    ``ValueError: I/O operation on closed file`` bug in tmp_path teardown.
+
+    Uses tempfile.mkdtemp() directly and registers a finalizer for cleanup.
+    """
+    d = Path(tempfile.mkdtemp(prefix="pacm_repro_test_"))
+    request.addfinalizer(lambda: shutil.rmtree(d, ignore_errors=True))
+    return d
+
+
+@pytest.fixture
+def dry_pipeline(tmp_dir):
     """A dry-run ReproductionPipeline with a temp log dir."""
     return ReproductionPipeline(
         synthetic=True,
         skip_tests=False,
         dry_run=True,
-        log_dir=tmp_path / "reproduce_logs",
+        log_dir=tmp_dir / "reproduce_logs",
     )
 
 
@@ -107,18 +122,18 @@ class TestReproductionPipelineImport:
 
 class TestReproductionPipelineInit:
 
-    def test_instantiation_default(self, tmp_path):
-        p = ReproductionPipeline(log_dir=tmp_path)
+    def test_instantiation_default(self, tmp_dir):
+        p = ReproductionPipeline(log_dir=tmp_dir)
         assert p.synthetic is True
         assert p.skip_tests is False
         assert p.dry_run is False
 
-    def test_instantiation_dry_run(self, tmp_path):
-        p = ReproductionPipeline(dry_run=True, log_dir=tmp_path)
+    def test_instantiation_dry_run(self, tmp_dir):
+        p = ReproductionPipeline(dry_run=True, log_dir=tmp_dir)
         assert p.dry_run is True
 
-    def test_log_dir_created(self, tmp_path):
-        log_dir = tmp_path / "logs"
+    def test_log_dir_created(self, tmp_dir):
+        log_dir = tmp_dir / "logs"
         assert not log_dir.exists()
         ReproductionPipeline(log_dir=log_dir)
         assert log_dir.exists()
@@ -142,10 +157,10 @@ class TestDryRunExecution:
         step_nums = [r.step_num for r in results]
         assert len(step_nums) == 8
 
-    def test_skip_tests_removes_step1(self, tmp_path):
+    def test_skip_tests_removes_step1(self, tmp_dir):
         p = ReproductionPipeline(
             synthetic=True, skip_tests=True, dry_run=True,
-            log_dir=tmp_path
+            log_dir=tmp_dir
         )
         results = p.run()
         assert len(results) == 7
@@ -179,38 +194,53 @@ class TestStepResult:
 
 
 class TestPrintFinalSummary:
+    """
+    Use StringIO redirect instead of capsys to avoid the Python 3.14 +
+    pytest-9.1.1 ``ValueError: I/O operation on closed file`` bug that
+    affects capsys teardown when pytest's internal capture tmpfile is closed.
+    """
 
-    def test_print_summary_no_error(self, capsys):
-        results = _make_step_results(8)
-        print_final_summary(results)
-        captured = capsys.readouterr()
-        assert "PACM" in captured.out
-        assert "PASS" in captured.out
+    @staticmethod
+    def _capture_summary(results) -> str:
+        """Run print_final_summary with stdout redirected to a StringIO buffer."""
+        import sys
+        buf = StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = buf
+        try:
+            print_final_summary(results)
+        finally:
+            sys.stdout = old_stdout
+        return buf.getvalue()
 
-    def test_print_summary_shows_all_steps(self, capsys):
+    def test_print_summary_no_error(self):
         results = _make_step_results(8)
-        print_final_summary(results)
-        captured = capsys.readouterr()
+        out = self._capture_summary(results)
+        assert "PACM" in out
+        assert "PASS" in out
+
+    def test_print_summary_shows_all_steps(self):
+        results = _make_step_results(8)
+        out = self._capture_summary(results)
         for r in results:
-            assert r.name in captured.out
+            assert r.name in out
 
-    def test_print_summary_with_failures(self, capsys):
+    def test_print_summary_with_failures(self):
         results = _make_step_results(8)
         results[2].success = False
         results[2].output_tail = "Some error output"
-        print_final_summary(results)
-        captured = capsys.readouterr()
-        assert "failed" in captured.out.lower() or "FAIL" in captured.out
+        out = self._capture_summary(results)
+        assert "failed" in out.lower() or "FAIL" in out
 
 
 class TestMinimalCalibration:
 
-    def test_generate_minimal_calibration(self, tmp_path):
+    def test_generate_minimal_calibration(self, tmp_dir):
         """_generate_minimal_calibration writes a valid JSON file."""
         p = ReproductionPipeline(
-            synthetic=True, dry_run=True, log_dir=tmp_path / "logs"
+            synthetic=True, dry_run=True, log_dir=tmp_dir / "logs"
         )
-        out_path = tmp_path / "calibration_result.json"
+        out_path = tmp_dir / "calibration_result.json"
         p._generate_minimal_calibration(out_path)
         assert out_path.exists()
         with open(out_path, encoding="utf-8") as fh:

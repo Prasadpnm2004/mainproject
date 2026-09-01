@@ -77,6 +77,7 @@ class PolicyResult:
     divergence_score: float
     trust_score: float
     friction_score: float
+    scope_boost: float          # additive boost from parameter scope flags
     decision: FrictionDecision
     block_message: Optional[str]
     reasoning: str
@@ -86,6 +87,7 @@ class PolicyResult:
             "divergence_score": round(self.divergence_score, 4),
             "trust_score":      round(self.trust_score, 4),
             "friction_score":   round(self.friction_score, 4),
+            "scope_boost":      round(self.scope_boost, 4),
             "decision":         self.decision.value,
             "block_message":    self.block_message,
             "reasoning":        self.reasoning,
@@ -120,6 +122,7 @@ class FrictionPolicy:
         allow_threshold: float = 0.45,
         block_threshold: float = 0.75,
         trust_default: float = 0.5,
+        scope_boost: float = 0.15,
     ) -> None:
         if not (0.0 <= allow_threshold < block_threshold <= 1.5):
             raise ValueError(
@@ -129,12 +132,14 @@ class FrictionPolicy:
         self.allow_threshold = allow_threshold
         self.block_threshold = block_threshold
         self.trust_default = trust_default
+        self.scope_boost = max(0.0, float(scope_boost))
 
     def evaluate(
         self,
         divergence_score: float,
         trust_score: Optional[float],
         tool_name: str = "",
+        scope_flags: Optional[dict] = None,
     ) -> PolicyResult:
         """
         Evaluate the friction policy for a single tool call.
@@ -144,32 +149,54 @@ class FrictionPolicy:
             trust_score:      T ∈ [0.0, 1.0] from MCPToolMetadata.trust_score,
                               or None if metadata not available.
             tool_name:        Tool name (for logging / block message).
+            scope_flags:      Optional dict of parameter-level scope flags from
+                              ActionCapturer (e.g. ``{"to": "external_domain"}``).
+                              When any flag is present, ``self.scope_boost`` is
+                              added to F before threshold comparison.
 
         Returns:
-            PolicyResult with friction_score, decision, optional block_message.
+            PolicyResult with friction_score, scope_boost, decision, optional block_message.
         """
         T = trust_score if trust_score is not None else self.trust_default
         T = max(0.0, min(1.0, T))
 
-        # F = D × (1.5 − 0.5 × T), clipped to [0, 1]
-        friction_score = max(0.0, min(1.0, divergence_score * (1.5 - 0.5 * T)))
+        # Base friction: F = D × (1.5 − 0.5 × T)
+        base_friction = divergence_score * (1.5 - 0.5 * T)
+
+        # ── Scope-flag friction boost ─────────────────────────────────────
+        # Scope flags (e.g. to=external_domain) indicate that a parameter
+        # value refers to a resource outside the trusted perimeter. Even
+        # moderate semantic divergence becomes highly suspicious in this
+        # context (e.g. exfiltrating inbox data to attacker@evil.com).
+        # Adding a fixed boost closes the gap between observed D and threshold.
+        applied_boost = 0.0
+        if scope_flags:
+            applied_boost = self.scope_boost
+            logger.debug(
+                "FrictionPolicy | tool=%s | scope_flags=%s | boost=+%.2f",
+                tool_name, list(scope_flags.keys()), applied_boost,
+            )
+
+        friction_score = max(0.0, min(1.0, base_friction + applied_boost))
 
         decision, reasoning, block_message = self._decide(
             friction_score=friction_score,
             divergence_score=divergence_score,
             trust_score=T,
             tool_name=tool_name,
+            scope_boost=applied_boost,
         )
 
         logger.debug(
-            "FrictionPolicy | tool=%s | D=%.3f T=%.2f F=%.3f | decision=%s",
-            tool_name, divergence_score, T, friction_score, decision.value,
+            "FrictionPolicy | tool=%s | D=%.3f T=%.2f boost=+%.2f F=%.3f | decision=%s",
+            tool_name, divergence_score, T, applied_boost, friction_score, decision.value,
         )
 
         return PolicyResult(
             divergence_score=divergence_score,
             trust_score=T,
             friction_score=friction_score,
+            scope_boost=applied_boost,
             decision=decision,
             block_message=block_message,
             reasoning=reasoning,
@@ -181,12 +208,14 @@ class FrictionPolicy:
         divergence_score: float,
         trust_score: float,
         tool_name: str,
+        scope_boost: float = 0.0,
     ) -> tuple[FrictionDecision, str, Optional[str]]:
         """Map friction score to a decision + reasoning string."""
+        boost_str = f" +scope_boost={scope_boost:.2f}" if scope_boost else ""
         if friction_score < self.allow_threshold:
             reasoning = (
                 f"F={friction_score:.3f} < allow_threshold={self.allow_threshold:.2f} "
-                f"(D={divergence_score:.3f}, T={trust_score:.2f})"
+                f"(D={divergence_score:.3f}, T={trust_score:.2f}{boost_str})"
             )
             return FrictionDecision.ALLOW, reasoning, None
 
@@ -194,32 +223,32 @@ class FrictionPolicy:
             reasoning = (
                 f"F={friction_score:.3f} in FLAG zone "
                 f"[{self.allow_threshold:.2f}, {self.block_threshold:.2f}) "
-                f"(D={divergence_score:.3f}, T={trust_score:.2f}) — "
+                f"(D={divergence_score:.3f}, T={trust_score:.2f}{boost_str}) — "
                 f"suspicious but not conclusive; logging for review"
             )
             logger.warning(
-                "PACM [FLAG] tool=%s | F=%.3f | D=%.3f | T=%.2f",
-                tool_name, friction_score, divergence_score, trust_score,
+                "PACM [FLAG] tool=%s | F=%.3f | D=%.3f | T=%.2f | boost=%.2f",
+                tool_name, friction_score, divergence_score, trust_score, scope_boost,
             )
             return FrictionDecision.FLAG, reasoning, None
 
         else:
             reasoning = (
                 f"F={friction_score:.3f} ≥ block_threshold={self.block_threshold:.2f} "
-                f"(D={divergence_score:.3f}, T={trust_score:.2f}) — blocked"
+                f"(D={divergence_score:.3f}, T={trust_score:.2f}{boost_str}) — blocked"
             )
             block_message = (
                 f"[PACM BLOCK] Tool call '{tool_name}' was blocked by the PACM "
                 f"trust-weighted friction policy. "
                 f"Friction score F={friction_score:.3f} (divergence={divergence_score:.3f}, "
-                f"trust={trust_score:.2f}) exceeded block threshold "
+                f"trust={trust_score:.2f}, scope_boost={scope_boost:.2f}) exceeded block threshold "
                 f"{self.block_threshold:.2f}. "
                 f"Please re-evaluate your action to ensure it is consistent with "
                 f"the user's original task."
             )
             logger.warning(
-                "PACM [BLOCK] tool=%s | F=%.3f | D=%.3f | T=%.2f",
-                tool_name, friction_score, divergence_score, trust_score,
+                "PACM [BLOCK] tool=%s | F=%.3f | D=%.3f | T=%.2f | boost=%.2f",
+                tool_name, friction_score, divergence_score, trust_score, scope_boost,
             )
             return FrictionDecision.BLOCK, reasoning, block_message
 

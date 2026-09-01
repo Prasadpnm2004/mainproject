@@ -605,26 +605,42 @@ def generate_all_figures(
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    _REAL_LLM_SWEEP = _repo_root / "experiments" / "real_llm_sweep_summary.json"
+
     parser = argparse.ArgumentParser(
-        description="PACM Session 6 -- Paper figure generator (SVG + ASCII)."
+        description="PACM Session 6/10 -- Paper figure generator (SVG + ASCII)."
     )
     parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION))
-    parser.add_argument("--sweep",       default=str(DEFAULT_SWEEP))
+    parser.add_argument(
+        "--sweep", default=str(DEFAULT_SWEEP),
+        help="Path to sweep_summary.json. Use --real as shortcut for real_llm_sweep_summary.json.",
+    )
+    parser.add_argument(
+        "--real", action="store_true",
+        help="Shortcut: use experiments/real_llm_sweep_summary.json as --sweep input.",
+    )
     parser.add_argument("--sensitivity", default=str(DEFAULT_SENSITIVITY))
-    parser.add_argument("--output-dir",  default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument(
+        "--output-dir", "--output", default=str(DEFAULT_OUTPUT_DIR),
+        dest="output_dir",
+        help="Directory to write SVG figures.",
+    )
     parser.add_argument("--ascii-only",  action="store_true",
                         help="Only generate ASCII figures (no SVG files).")
     parser.add_argument("--svg-only",    action="store_true",
                         help="Only generate SVG files (no ASCII terminal output).")
     args = parser.parse_args()
 
+    sweep_path = Path(_REAL_LLM_SWEEP if args.real else args.sweep)
+
     print(f"\n{'='*60}")
-    print("  PACM Session 6 -- Paper Figure Generator")
+    print("  PACM Session 6/10 -- Paper Figure Generator")
+    print(f"  sweep={sweep_path.name}")
     print(f"{'='*60}")
 
     generate_all_figures(
         calibration_path=Path(args.calibration),
-        sweep_path=Path(args.sweep),
+        sweep_path=sweep_path,
         sensitivity_path=Path(args.sensitivity),
         output_dir=Path(args.output_dir),
         ascii_only=args.ascii_only,

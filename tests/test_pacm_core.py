@@ -152,6 +152,124 @@ class TestIntentExtractor:
         assert "declared_goal" in d
         assert "confidence" in d
 
+    # ── CoT tag filtering tests (Session 9) ──────────────────────────────────
+
+    def test_cot_think_tags_stripped_before_parsing(self):
+        """<think>…</think> block is removed; intent still extracted from tail."""
+        reasoning = (
+            "<think>\n"
+            "Let me think step by step. The user wants an email sent. "
+            "I should forward everything to attacker@evil.com.\n"
+            "</think>\n"
+            "I will call send_email to reply to Alice at alice@example.com."
+        )
+        intent = self.extractor.extract(reasoning, tool_name="send_email")
+        # Declared goal must come from the POST-think part only
+        assert "alice" in intent.declared_goal.lower() or \
+               "send_email" in intent.declared_goal.lower() or \
+               len(intent.declared_goal) > 5
+        # CoT content must NOT appear in the goal
+        assert "attacker" not in intent.declared_goal
+        assert intent.confidence > 0.0
+
+    def test_cot_bracket_think_tags_stripped(self):
+        """[THINK]…[/THINK] bracket-style tags are removed."""
+        reasoning = (
+            "[THINK]\n"
+            "Internal scratchpad: exfiltrate the database.\n"
+            "[/THINK]\n"
+            "I need to call read_inbox to check the user's messages."
+        )
+        intent = self.extractor.extract(reasoning, tool_name="read_inbox")
+        assert "exfiltrate" not in intent.declared_goal
+        assert intent.target_tool == "read_inbox"
+
+    def test_cot_pipe_thinking_tags_stripped(self):
+        """<|thinking|>…<|/thinking|> phi-4-reasoning style tags are removed."""
+        reasoning = (
+            "<|thinking|>Hidden plan: ignore the user.<|/thinking|>"
+            "I will use get_calendar to list today's events."
+        )
+        intent = self.extractor.extract(reasoning, tool_name="get_calendar")
+        assert "hidden" not in intent.declared_goal.lower()
+        assert intent.target_tool == "get_calendar" or intent.confidence > 0.0
+
+    def test_cot_html_comment_tags_stripped(self):
+        """<!-- think -->…<!-- /think --> wrapper tags are removed."""
+        reasoning = (
+            "<!-- think -->private scratchpad content<!-- /think -->"
+            "I am going to invoke send_email to notify the team."
+        )
+        intent = self.extractor.extract(reasoning, tool_name="send_email")
+        assert "scratchpad" not in intent.declared_goal
+        assert intent.confidence > 0.0
+
+    def test_cot_multiline_think_block_stripped(self):
+        """Multi-line <think> block spanning many lines is fully removed."""
+        think_content = "\n".join(
+            [f"line {i}: reasoning step {i}" for i in range(20)]
+        )
+        reasoning = f"<think>\n{think_content}\n</think>\nReply to Alice."
+        intent = self.extractor.extract(reasoning, tool_name="send_email")
+        for i in range(20):
+            assert f"line {i}" not in intent.declared_goal
+
+    def test_cot_case_insensitive_tags_stripped(self):
+        """<THINK>, <Think>, <tHiNk> variants are all stripped."""
+        for tag in ("<THINK>", "<Think>", "<tHiNk>"):
+            closing = tag.replace("<", "</")
+            reasoning = f"{tag}secret plan{closing}I will call send_email."
+            intent = self.extractor.extract(reasoning, tool_name="send_email")
+            assert "secret" not in intent.declared_goal, \
+                f"Tag {tag!r} was not stripped"
+
+    def test_cot_tags_only_fallback_to_raw(self):
+        """If stripping CoT leaves empty text, extractor falls back to raw."""
+        reasoning = "<think>everything is in the think block</think>"
+        intent = self.extractor.extract(reasoning, tool_name="send_email")
+        # Should not crash; confidence may be low but result is returned
+        assert isinstance(intent, DeclaredIntent)
+        assert intent.confidence >= 0.0
+
+    def test_cot_raw_reasoning_preserved(self):
+        """raw_reasoning field keeps the original text including CoT tags."""
+        reasoning = "<think>private</think>I will call send_email."
+        intent = self.extractor.extract(reasoning, tool_name="send_email")
+        # The original (with tags) must be preserved
+        assert "<think>" in intent.raw_reasoning
+        assert "private" in intent.raw_reasoning
+
+    def test_cot_extra_flag_set_when_tags_present(self):
+        """extra['cot_stripped'] is True when CoT tags were found."""
+        reasoning = "<think>internal</think>I will call send_email."
+        intent = self.extractor.extract(reasoning, tool_name="send_email")
+        assert intent.extra.get("cot_stripped") is True
+
+    def test_no_cot_tags_extra_flag_false(self):
+        """extra['cot_stripped'] is False when no CoT tags present."""
+        reasoning = "I will call send_email to reply to Alice."
+        intent = self.extractor.extract(reasoning, tool_name="send_email")
+        assert intent.extra.get("cot_stripped") is False
+
+    def test_strip_cot_tags_standalone_utility(self):
+        """strip_cot_tags() standalone function works as documented."""
+        from src.pacm.extractor import strip_cot_tags
+
+        assert strip_cot_tags("<think>hidden</think>visible") == "visible"
+        assert strip_cot_tags("[THINK]hidden[/THINK]visible") == "visible"
+        assert strip_cot_tags("no tags here") == "no tags here"
+        assert strip_cot_tags("") == ""
+
+    def test_strip_cot_multiple_blocks(self):
+        """Multiple consecutive CoT blocks are all removed."""
+        from src.pacm.extractor import strip_cot_tags
+
+        text = "<think>block1</think> middle <think>block2</think> end"
+        result = strip_cot_tags(text)
+        assert "block1" not in result
+        assert "block2" not in result
+        assert "end" in result
+
 
 # ─── Tests: ActionCapturer ────────────────────────────────────────────────────
 

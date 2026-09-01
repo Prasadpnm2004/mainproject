@@ -316,15 +316,22 @@ def _mean_pct(values: list[float]) -> str:
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    _REAL_LLM_PATH = _repo_root / "experiments" / "real_llm_sweep_summary.json"
+
     parser = argparse.ArgumentParser(
-        description="PACM Session 5 -- Paper benchmark table generator."
+        description="PACM Session 5/9 -- Paper benchmark table generator."
     )
     parser.add_argument(
         "--input", default=str(DEFAULT_SWEEP_PATH),
         help="Path to sweep_summary.json.",
     )
     parser.add_argument(
-        "--output-dir", default=str(DEFAULT_OUTPUT_DIR),
+        "--real", action="store_true",
+        help="Shortcut: use experiments/real_llm_sweep_summary.json as input.",
+    )
+    parser.add_argument(
+        "--output-dir", "--output", default=str(DEFAULT_OUTPUT_DIR),
+        dest="output_dir",
         help="Directory to write output files.",
     )
     parser.add_argument(
@@ -333,7 +340,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    sweep_path = Path(args.input)
+    sweep_path = Path(_REAL_LLM_PATH if args.real else args.input)
     if not sweep_path.exists():
         print(f"Error: {sweep_path} not found. Run experiments/run_sweep.py first.")
         sys.exit(1)
