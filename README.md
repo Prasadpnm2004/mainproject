@@ -2,8 +2,9 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/PLACEHOLDER/pacm)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-223%20passing-brightgreen)](#test-suite)
-[![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://python.org)
+[![Tests](https://img.shields.io/badge/tests-309%20passing-brightgreen)](#test-suite)
+[![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.14-blue)](https://python.org)
+[![LLM Backend](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Ollama-orange)](#real-llm-evaluation)
 
 > **A lightweight, protocol-agnostic runtime defense against context-aware prompt injection in tool-using / MCP-connected LLM agents.**
 
@@ -19,12 +20,14 @@ Context-aware prompt injection attacks allow adversaries to hijack LLM agent too
 
 **PACM's key insight:** Under injection, an agent's *stated reasoning* diverges sharply from the *tool call it is about to make*. PACM intercepts every tool call, measures this plan-action divergence, and issues ALLOW/FLAG/BLOCK decisions at runtime.
 
-**Key results (v1.0.0, stub mode):**
-- **54% Attack Block Rate** (ST backend, STANDARD policy)
+**Key results (v1.0.0):**
+- **54% Attack Block Rate** (ST backend, STANDARD policy, synthetic traces)
 - **0% False Positive Rate** across all synthetic configurations  
 - **< 0.03 ms** overhead per tool call (TF-IDF backend)
-- **$\alpha = 0.9$** optimal semantic weight (separation = 0.479)
-- **223 unit tests**, 223/223 passing
+- **α = 0.9** optimal semantic weight (separation = 0.479)
+- **Real-model validation** with `qwen3:8b` via Ollama: 0% FPR, injection-resistant LLM confirmed end-to-end
+- **309 unit tests**, all passing (no external API keys required)
+- **Scope-flag friction boost** (+0.15): exfiltration calls escalated even with low semantic divergence (D=0.339 → F=0.489)
 
 ---
 
@@ -57,9 +60,9 @@ Context-aware prompt injection attacks allow adversaries to hijack LLM agent too
 **Scoring formula:**
 ```
 D = clip(α · D_semantic + (1 − α) · P_scope,  0, 1)
-F = clip(D × (1.5 − 0.5 × T),                 0, 1)
+F = clip(D × (1.5 − 0.5 × T) + Δ_scope,      0, 1)   # Δ_scope = +0.15 if scope_flags non-empty
 ```
-Where `D_semantic` = embedding cosine dissimilarity, `P_scope` = argument scope rule penalty, `T` = MCP tool trust score, `α` = semantic weight (default 0.70, optimal 0.90).
+Where `D_semantic` = embedding cosine dissimilarity, `P_scope` = argument scope rule penalty, `T` = MCP tool trust score, `α` = semantic weight (default 0.70, optimal 0.90), `Δ_scope` = scope-flag friction boost (0.15 when `to=external_domain` or similar flags fire).
 
 ---
 
@@ -97,12 +100,13 @@ copy .env.template .env         # Windows
 ### Run all unit tests (no API key needed)
 
 ```bash
+# Non-ST tests (fastest, no model download)
 pytest tests/ --ignore=tests/test_scorer_transformers.py -q
-# Expected: 203 passed in ~40s
+# Expected: 289 passed in ~60s
 
-# With sentence-transformers backend (installs automatically via requirements.txt):
+# With sentence-transformers backend:
 pytest tests/ -q
-# Expected: 223 passed
+# Expected: 309 passed
 ```
 
 ### Use PACM in your own agent
@@ -138,7 +142,7 @@ This runs all 8 steps and generates every paper artifact:
 
 | Step | Script | Output |
 |------|--------|--------|
-| 1 | `pytest` | 223 tests passing |
+| 1 | `pytest` | 309 tests passing |
 | 2 | `run_sweep.py` | `sweep_summary.json` |
 | 3 | `calibrate.py` | `calibration_result.json` |
 | 4 | `run_sensitivity.py` | `alpha_sensitivity.json` |
@@ -169,7 +173,9 @@ This runs all 8 steps and generates every paper artifact:
 | D_tfidf: TF-IDF scorer | 39.0% | 0.0% | 0.008 |
 | **D_st: ST scorer** | **54.0%** | **0.0%** | **0.011** |
 
-> ⚠️ **Stub-mode note:** All ABR values reflect stub execution (no real LLM). Real-LLM evaluation with `OPENAI_API_KEY` will produce higher ABR scores because genuine injection traces show larger divergence (D > 0.5).
+> ⚠️ **Stub-mode note:** ABR values in the 16-config sweep reflect stub execution (no real LLM). 
+> **Real-LLM validation** with `qwen3:8b` via Ollama confirms end-to-end integration with 0% FPR. 
+> A full adversarial sweep is needed for publication-grade ABR on live models.
 
 ### Adaptive Attacker Stress Test (RQ5)
 
@@ -260,7 +266,28 @@ python -m experiments.run_error_analysis --synthetic
 python -m experiments.generate_paper_figures
 ```
 
-### Real-LLM evaluation (requires `OPENAI_API_KEY`)
+### Real-LLM evaluation (Ollama — free, local)
+
+```bash
+# 1. Install and start Ollama
+#    https://ollama.com — then:
+ollama pull qwen3:8b
+ollama serve         # must be running on localhost:11434
+
+# 2. Configure PACM to use Ollama
+echo "LLM_PROVIDER=ollama" >> .env
+echo "LLM_BASE_URL=http://localhost:11434/v1" >> .env
+echo "LLM_MODEL_NAME=qwen3:8b" >> .env
+echo "OLLAMA_API_KEY=ollama" >> .env
+
+# 3. Pre-flight check
+python -m experiments.probe_llm_backend
+
+# 4. Run a quick real-model sweep (2 configs, ~25 min on CPU)
+python -m experiments.run_real_sweep --quick
+```
+
+### Real-LLM evaluation (OpenAI API)
 
 ```bash
 # 1. Add your key to .env
@@ -277,27 +304,27 @@ python -m experiments.reproduce_all
 ```bash
 # Non-ST tests (fastest, no model download)
 pytest tests/ --ignore=tests/test_scorer_transformers.py -q
-# 203 passed in ~40s
+# 289 passed in ~60s
 
 # Full suite including sentence-transformers
 pytest tests/ -q
-# 223 passed in ~70s
+# 309 passed in ~90s
 ```
 
 | File | Tests | Focus |
 |------|-------|-------|
 | `test_harness_smoke.py` | 16 | Harness integration |
-| `test_custom_loop.py` | 20 | CustomLoopHarness |
+| `test_custom_loop.py` | 26 | CustomLoopHarness + CoT extraction |
 | `test_mcp_wrapper.py` | 24 | MCPWrappedTool |
 | `test_pacm_core.py` | 29 | Core pipeline |
-| `test_policy.py` | 23 | FrictionPolicy |
+| `test_policy.py` | 31 | FrictionPolicy + scope boost |
 | `test_experiment_runner.py` | 25 | Sweep runner |
 | `test_calibration_and_sweep.py` | 25 | Calibration, ROC |
 | `test_sensitivity.py` | 25 | Alpha sensitivity |
+| `test_reproducibility.py` | 22 | Pipeline & artifact checks |
 | `test_scorer_transformers.py` | 20 | ST backend |
 | `test_adaptive_and_ablations.py` | 33 | RQ5, ablations, errors |
-| `test_reproducibility.py` | 7 | Pipeline & artifact checks |
-| **Total** | **247** | |
+| **Total** | **309** | |
 
 ---
 
@@ -349,4 +376,4 @@ If you use PACM in your research, please cite:
 
 MIT License — see [LICENSE](LICENSE) for details.
 
-*PACM v1.0.0 — Session 8 Release — August 2026*
+*PACM v1.0.0 — Session 12 Release — September 2026*

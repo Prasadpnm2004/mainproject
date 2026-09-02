@@ -1,6 +1,7 @@
 
 ============================================================
-  PACM Session 6 -- Paper Figure Generator
+  PACM Session 6/10 -- Paper Figure Generator
+  sweep=full_sweep_summary.json
 ============================================================
   ROC SVG       -> D:\mainproject\experiments\figures\roc_curve.svg
 

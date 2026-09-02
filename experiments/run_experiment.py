@@ -282,6 +282,10 @@ def run_experiment(
         # This avoids allow ≥ block when tests pass tiny sentinel values.
         if divergence_threshold >= 0.10 and divergence_threshold < _block:
             _block = divergence_threshold
+        # Guarantee allow_threshold < block_threshold (required by FrictionPolicy).
+        # If clamping block below allow, reduce allow to block - 0.10 (min 0.05).
+        if _allow >= _block:
+            _allow = max(0.05, _block - 0.10)
         _scope_policy = FrictionPolicy(
             allow_threshold=_allow,
             block_threshold=_block,

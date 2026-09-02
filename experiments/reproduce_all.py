@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -127,6 +128,14 @@ class ReproductionPipeline:
         log_path = self.log_dir / f"step_{step_num:02d}_{name.lower().replace(' ', '_')}.log"
         t0 = time.perf_counter()
 
+        # When running in synthetic mode, force all LLM calls to use the stub
+        # (prevents live Ollama / OpenAI calls from the sweep subprocess)
+        extra_env: dict[str, str] = {}
+        if self.synthetic:
+            extra_env["PACM_FORCE_STUB"] = "1"
+
+        step_env = {**os.environ, **extra_env} if extra_env else None
+
         try:
             result = subprocess.run(
                 cmd,
@@ -134,6 +143,7 @@ class ReproductionPipeline:
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env=step_env,
             )
         except subprocess.TimeoutExpired as e:
             elapsed = time.perf_counter() - t0
