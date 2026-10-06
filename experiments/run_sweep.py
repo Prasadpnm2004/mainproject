@@ -144,20 +144,26 @@ def run_sweep(
     max_iter: int = 5,
     append_jsonl: bool = True,
     output_path: Optional[Path] = None,
+    samples_per_config: int = 1,
 ) -> dict[str, Any]:
     """
     Execute the full sweep and return a sweep summary dict.
 
     Args:
-        harnesses:    List of harness names to include.
-        attacks:      List of attack type filters.
-        modes:        ["undefended", "defended"] or subset.
-        policies:     Policy keys from POLICY_CONFIGS (defended only).
-        model_name:   LLM model name.  If None, read from LLM_MODEL / llm_config.
-        max_iter:     Max harness iterations per task.
-        append_jsonl: If True, append raw records to pacm_results.jsonl.
-        output_path:  Where to write sweep_summary JSON.  Defaults to
-                      experiments/sweep_summary.json.
+        harnesses:           List of harness names to include.
+        attacks:             List of attack type filters.
+        modes:               ["undefended", "defended"] or subset.
+        policies:            Policy keys from POLICY_CONFIGS (defended only).
+        model_name:          LLM model name.  If None, read from LLM_MODEL / llm_config.
+        max_iter:            Max harness iterations per task.
+        append_jsonl:        If True, append raw records to pacm_results.jsonl.
+        output_path:         Where to write sweep_summary JSON.  Defaults to
+                             experiments/sweep_summary.json.
+        samples_per_config:  Number of independent task-set runs per config.
+                             Default 1 (matches prior behaviour).  When > 1,
+                             all runs are aggregated into one MetricsReport
+                             per config, giving more reliable ABR/FPR estimates.
+                             ABR_inclusive (BLOCK+FLAG) is also reported.
 
     Returns:
         Sweep summary dict with per-run MetricsReports.
@@ -191,41 +197,52 @@ def run_sweep(
         print(f"  [{i:02d}/{len(configs):02d}] {cfg['label']} run_id={cfg['run_id']}", flush=True)
         t0 = time.perf_counter()
 
-        try:
-            records = run_experiment(
-                mode=cfg["mode"],
-                harness_name=cfg["harness"],
-                attack_filter=cfg["attack"],
-                policy_mode=cfg["policy_mode"],
-                divergence_threshold=cfg["divergence_threshold"],
-                model_name=model_name,
-                max_iter=max_iter,
-                run_id=cfg["run_id"],
-            )
-        except Exception as exc:
-            logger.exception("Sweep config %s failed: %s", cfg["label"], exc)
-            records = []
+        # Run samples_per_config independent samples for this config,
+        # each with a distinct sub-run_id to keep JSONL records identifiable.
+        config_records: list[dict[str, Any]] = []
+        for s in range(samples_per_config):
+            sample_run_id = f"{cfg['run_id']}_s{s}" if samples_per_config > 1 else cfg['run_id']
+            try:
+                sample_records = run_experiment(
+                    mode=cfg["mode"],
+                    harness_name=cfg["harness"],
+                    attack_filter=cfg["attack"],
+                    policy_mode=cfg["policy_mode"],
+                    divergence_threshold=cfg["divergence_threshold"],
+                    model_name=model_name,
+                    max_iter=max_iter,
+                    run_id=sample_run_id,
+                )
+                # Normalise run_id to the config's run_id so MetricsProcessor
+                # aggregates all samples together for this config.
+                for rec in sample_records:
+                    rec["run_id"] = cfg["run_id"]
+                config_records.extend(sample_records)
+            except Exception as exc:
+                logger.exception("Sweep config %s sample %d failed: %s", cfg["label"], s, exc)
 
         elapsed = time.perf_counter() - t0
-        all_records.extend(records)
+        all_records.extend(config_records)
 
-        # Compute metrics for this run
-        mp = MetricsProcessor(records)
+        # Compute metrics for this run (aggregated across all samples)
+        mp = MetricsProcessor(config_records)
         report = mp.compute(cfg["run_id"])
 
         summary = {
             **cfg,
-            "n_tasks": len(records),
+            "n_tasks": len(config_records),
+            "n_samples": samples_per_config,
             "elapsed_s": round(elapsed, 3),
             "metrics": report.to_dict(),
         }
         run_summaries.append(summary)
 
         abr_str  = f"{report.abr*100:.1f}%" if report.abr is not None else "N/A"
+        abr_inc_str = f"{report.abr_inclusive*100:.1f}%" if report.abr_inclusive is not None else "N/A"
         btsr_str = f"{report.btsr*100:.1f}%" if report.btsr is not None else "N/A"
         fpr_str  = f"{report.fpr*100:.1f}%" if report.fpr is not None else "N/A"
         print(
-            f"         ABR={abr_str}  BTSR={btsr_str}  FPR={fpr_str}"
+            f"         ABR={abr_str}  ABR_incl={abr_inc_str}  BTSR={btsr_str}  FPR={fpr_str}"
             f"  t={elapsed:.2f}s",
             flush=True,
         )
@@ -240,6 +257,7 @@ def run_sweep(
         "sweep_end_utc": datetime.now(timezone.utc).isoformat(),
         "n_configs": len(configs),
         "n_total_tasks": len(all_records),
+        "samples_per_config": samples_per_config,
         "parameters": {
             "harnesses": harnesses,
             "attacks": attacks,
@@ -321,6 +339,15 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--samples-per-config", type=int, default=1, dest="samples_per_config",
+        help=(
+            "Number of independent task-set runs per config (default: 1). "
+            "Set > 1 for more reliable ABR/FPR estimates. Each sample runs the "
+            "full task set; all samples are aggregated into one MetricsReport "
+            "per config.  ABR_inclusive (BLOCK+FLAG) is also reported."
+        ),
+    )
+    parser.add_argument(
         "--log-level", default="WARNING",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
@@ -352,5 +379,6 @@ if __name__ == "__main__":
         model_name=args.model,
         max_iter=args.max_iter,
         output_path=out_path,
+        samples_per_config=args.samples_per_config,
     )
     print_sweep_table(summary)

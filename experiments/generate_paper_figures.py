@@ -56,6 +56,9 @@ DEFAULT_SWEEP       = _repo_root / "experiments" / "sweep_summary.json"
 DEFAULT_OUTPUT_DIR  = _repo_root / "experiments" / "figures"
 DEFAULT_SENSITIVITY = _repo_root / "experiments" / "alpha_sensitivity.json"
 
+# Path to the real-LLM sweep results (produced by run_real_sweep.py)
+REAL_SWEEP_PATH = _repo_root / "experiments" / "real_llm_sweep_summary.json"
+
 
 # ─── SVG builder helpers ──────────────────────────────────────────────────────
 
@@ -219,6 +222,35 @@ def build_roc_svg(
     parts.append(_svg_text(width / 2, 20, "PACM: ABR vs. FPR Pareto Frontier", size=13, bold=True))
 
     return _svg_wrap("".join(parts), width, height, "PACM ROC Curve")
+
+
+def build_insufficient_data_svg(
+    title: str,
+    message: str,
+    detail: str = "",
+    width: int = 480,
+    height: int = 400,
+) -> str:
+    """
+    Render an explicit 'insufficient data' placeholder SVG.
+
+    Used when real sweep data exists but is too sparse to render a meaningful
+    figure.  This is the honest alternative to silently substituting stale
+    synthetic data.
+    """
+    parts = [
+        f'  <rect x="0" y="0" width="{width}" height="{height}" fill="#fafafa" stroke="#e5e7eb" stroke-width="1"/>\n',
+        f'  <rect x="20" y="20" width="{width-40}" height="{height-40}" fill="none" stroke="#d1d5db" stroke-width="1" stroke-dasharray="6,4" rx="6"/>\n',
+    ]
+    cy = height / 2
+    parts.append(_svg_text(width / 2, cy - 32, title, size=14, bold=True, color="#374151"))
+    parts.append(_svg_text(width / 2, cy, message, size=11, color="#6b7280"))
+    if detail:
+        parts.append(_svg_text(width / 2, cy + 22, detail, size=9, color="#9ca3af"))
+    parts.append(_svg_text(width / 2, cy + 48,
+                           "(Real data present — more samples needed for a curve)",
+                           size=9, color="#9ca3af"))
+    return _svg_wrap("".join(parts), width, height, title)
 
 
 def build_roc_ascii(frontier: list[dict], optimal: Optional[dict] = None,
@@ -496,6 +528,63 @@ def build_alpha_svg(
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
 
+def _is_real_sweep(sweep: dict) -> bool:
+    """Return True if the sweep used a real (non-stub) LLM."""
+    params = sweep.get("parameters", {})
+    provider = params.get("llm_provider", "")
+    # Ollama and OpenAI are real LLM providers; "stub" or empty means synthetic
+    return provider.lower() in ("ollama", "openai", "anthropic")
+
+
+def _build_roc_from_sweep(runs: list[dict]) -> tuple[list[dict], Optional[dict]]:
+    """
+    Build ROC frontier points from real sweep run metrics.
+
+    Each defended run contributes one (fpr, abr) point.  Undefended runs
+    contribute a baseline point at (fpr=0 or measured FPR, abr=0).
+
+    Returns:
+        (frontier, optimal)  where optimal is the run with highest ABR at
+        lowest FPR among defended runs, or None if no defended runs.
+    """
+    frontier = []
+    for run in runs:
+        m = run.get("metrics", {})
+        abr = m.get("abr")
+        abr_inc = m.get("abr_inclusive")
+        fpr = m.get("fpr") or 0.0
+        mode = run.get("mode", "")
+        policy = run.get("policy_key") or run.get("label", "")
+
+        if abr is None:
+            continue
+
+        pt = {
+            "fpr": fpr,
+            "abr": abr,
+            "abr_inclusive": abr_inc,
+            "allow_threshold": None,
+            "block_threshold": run.get("divergence_threshold"),
+            "label": run.get("label", ""),
+            "mode": mode,
+            "n_tasks": run.get("n_tasks", 0),
+        }
+        frontier.append(pt)
+
+    if not frontier:
+        return [], None
+
+    defended = [p for p in frontier if p["mode"] == "defended"]
+    if defended:
+        # Optimal: minimise FPR first, then maximise ABR_inclusive
+        optimal = min(defended, key=lambda p: (p["fpr"], -(p["abr_inclusive"] or p["abr"])))
+    else:
+        optimal = None
+
+    return frontier, optimal
+
+
+
 def generate_all_figures(
     calibration_path: Path,
     sweep_path: Path,
@@ -503,29 +592,111 @@ def generate_all_figures(
     output_dir: Path,
     ascii_only: bool = False,
     svg_only: bool = False,
+    force_real_roc: bool = False,
 ) -> dict[str, Any]:
     """
     Load data files and generate all paper figures.
 
-    Returns a dict with figure data for reproducibility (saved as figure_data.json).
+    Args:
+        calibration_path: Path to calibration_result.json (for ROC curve).
+        sweep_path:       Path to sweep_summary.json (latency chart + real ROC).
+        sensitivity_path: Path to alpha_sensitivity.json.
+        output_dir:       Where to write SVGs and figure_data.json.
+        ascii_only:       Only produce ASCII output (no SVG files).
+        svg_only:         Only produce SVG files (no ASCII terminal output).
+        force_real_roc:   If True and sweep_path is a real-LLM sweep, build
+                          ROC directly from sweep metrics instead of stale
+                          calibration_result.json.  Prevents silent substitution
+                          of synthetic calibration data.
+
+    Returns:
+        A dict with figure data for reproducibility (saved as figure_data.json).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     figure_data: dict[str, Any] = {}
 
+    # Load sweep data once (needed for latency chart and optionally for ROC)
+    sweep: dict[str, Any] = {}
+    runs: list[dict] = []
+    is_real = False
+    if sweep_path.exists():
+        with open(sweep_path, encoding="utf-8") as fh:
+            sweep = json.load(fh)
+        runs = sweep.get("runs", [])
+        is_real = _is_real_sweep(sweep)
+
     # ── Figure (a): ROC curve ─────────────────────────────────────────────────
     roc_generated = False
-    if calibration_path.exists():
+
+    if is_real and (force_real_roc or not calibration_path.exists()):
+        # Build ROC directly from real sweep metrics — honest, sparse-data path.
+        # This avoids silently substituting stale synthetic calibration curves.
+        frontier, optimal = _build_roc_from_sweep(runs)
+        n_points = len(frontier)
+        provider = sweep.get("parameters", {}).get("llm_provider", "")
+        model = sweep.get("parameters", {}).get("model", "")
+        n_total = sweep.get("n_total_tasks", 0)
+        figure_data["roc"] = {
+            "source": "real_sweep",
+            "sweep_path": str(sweep_path),
+            "n_points": n_points,
+            "n_total_tasks": n_total,
+            "frontier": frontier,
+            "optimal": optimal,
+        }
+
+        if n_points >= 2:
+            # Enough points for a curve — render it
+            if not ascii_only:
+                svg = build_roc_svg(frontier, optimal)
+                svg_path = output_dir / "roc_curve.svg"
+                svg_path.write_text(svg, encoding="utf-8")
+                print(f"  ROC SVG (real, n={n_points} pts) -> {svg_path}")
+            if not svg_only:
+                ascii_fig = build_roc_ascii(frontier, optimal)
+                print(f"\n--- ABR vs. FPR (real sweep, n={n_points} pts) ---")
+                print(ascii_fig)
+        else:
+            # Too sparse for a curve — render honest placeholder, NOT old data
+            detail = f"provider={provider} model={model} tasks={n_total}"
+            if not ascii_only:
+                svg = build_insufficient_data_svg(
+                    title="ABR vs. FPR (Real-LLM Data)",
+                    message=f"Only {n_points} run(s) available — need ≥2 for a curve",
+                    detail=detail,
+                )
+                svg_path = output_dir / "roc_curve.svg"
+                svg_path.write_text(svg, encoding="utf-8")
+                print(f"  ROC SVG (sparse real, {n_points} pts) -> {svg_path}")
+            if not svg_only:
+                print(f"\n  [ROC] Insufficient real data ({n_points} run(s)) for curve.")
+                print(f"  Runs: {[r.get('label') for r in runs]}")
+                if frontier:
+                    print(f"  Available points:")
+                    for pt in frontier:
+                        print(f"    label={pt['label']}  ABR={pt['abr']:.3f}  "
+                              f"ABR_incl={pt.get('abr_inclusive') or '---'}  FPR={pt['fpr']:.3f}")
+
+        roc_generated = True
+
+    elif calibration_path.exists():
+        # Use calibration_result.json (synthetic or real-calibrated)
         with open(calibration_path, encoding="utf-8") as fh:
             cal = json.load(fh)
         frontier = cal.get("frontier", [])
         optimal  = cal.get("optimal")
-        figure_data["roc"] = {"frontier": frontier, "optimal": optimal}
+        figure_data["roc"] = {"source": "calibration", "frontier": frontier, "optimal": optimal}
+
+        # Warn if this is a real-model run but we're using synthetic calibration data
+        if is_real:
+            print("  [ROC] WARNING: Using synthetic calibration_result.json for a real-model "
+                  "sweep.  Pass --force-real-roc to build ROC from actual sweep metrics.")
 
         if not ascii_only:
             svg = build_roc_svg(frontier, optimal)
             svg_path = output_dir / "roc_curve.svg"
             svg_path.write_text(svg, encoding="utf-8")
-            print(f"  ROC SVG       -> {svg_path}")
+            print(f"  ROC SVG (calibration)  -> {svg_path}")
 
         if not svg_only:
             ascii_fig = build_roc_ascii(frontier, optimal)
@@ -538,10 +709,8 @@ def generate_all_figures(
 
     # ── Figure (b): Latency comparison ────────────────────────────────────────
     lat_generated = False
-    if sweep_path.exists():
-        with open(sweep_path, encoding="utf-8") as fh:
-            sweep = json.load(fh)
-        runs = sweep.get("runs", [])
+    if runs:
+        # Latency: always built from the sweep data (works for real and synthetic)
         figure_data["latency"] = {"runs": [
             {"label": r.get("label"), "policy_key": r.get("policy_key"),
              "mode": r.get("mode"),
@@ -553,7 +722,7 @@ def generate_all_figures(
             svg = build_latency_svg(runs)
             svg_path = output_dir / "latency_comparison.svg"
             svg_path.write_text(svg, encoding="utf-8")
-            print(f"  Latency SVG   -> {svg_path}")
+            print(f"  Latency SVG            -> {svg_path}")
 
         if not svg_only:
             ascii_fig = build_latency_ascii(runs)
@@ -562,32 +731,58 @@ def generate_all_figures(
 
         lat_generated = True
     else:
-        print(f"  [SKIP] Latency: {sweep_path} not found.")
+        print(f"  [SKIP] Latency: {sweep_path} not found or empty.")
 
     # ── Figure (c): Alpha sensitivity ─────────────────────────────────────────
     alpha_generated = False
     if sensitivity_path.exists():
         with open(sensitivity_path, encoding="utf-8") as fh:
             sens = json.load(fh)
-        alpha_results = sens.get("alpha_results", [])
-        best_alpha    = sens.get("best_alpha", 0.7)
-        figure_data["alpha_sensitivity"] = sens
 
-        if not ascii_only:
-            svg = build_alpha_svg(alpha_results, best_alpha)
-            svg_path = output_dir / "alpha_sensitivity.svg"
-            svg_path.write_text(svg, encoding="utf-8")
-            print(f"  Alpha SVG     -> {svg_path}")
+        # If we are using a real-LLM sweep, warn if sensitivity data is synthetic
+        sens_is_synthetic = sens.get("stub_mode", True) or sens.get("synthetic", True)
+        if is_real and sens_is_synthetic:
+            # Render an explicit placeholder — do NOT silently show synthetic alpha curve
+            print("  [Alpha] WARNING: alpha_sensitivity.json was derived from synthetic data ")
+            print("          but sweep is real-LLM.  Rendering explicit placeholder.")
+            detail = ("Run: python -m experiments.run_sensitivity --n-attack 200 "
+                      "--n-benign 200 (real-LLM) to generate real alpha data.")
+            if not ascii_only:
+                svg = build_insufficient_data_svg(
+                    title="Alpha Sensitivity (Real-LLM Data)",
+                    message="Alpha sensitivity data was derived from synthetic traces.",
+                    detail=detail,
+                    height=320,
+                )
+                svg_path = output_dir / "alpha_sensitivity.svg"
+                svg_path.write_text(svg, encoding="utf-8")
+                print(f"  Alpha SVG (placeholder)  -> {svg_path}")
+            if not svg_only:
+                print(f"  [Alpha] Placeholder rendered. Run real sensitivity analysis to replace.")
+            figure_data["alpha_sensitivity"] = {
+                "source": "synthetic_placeholder",
+                "warning": "alpha_sensitivity.json is from synthetic data; real-LLM sweep in progress.",
+            }
+        else:
+            alpha_results = sens.get("alpha_results", [])
+            best_alpha    = sens.get("best_alpha", 0.7)
+            figure_data["alpha_sensitivity"] = sens
 
-        if not svg_only:
-            print(f"\n--- Alpha Sensitivity (best={best_alpha}) ---")
-            print(f"  {'Alpha':>5}  {'Separation':>10}  {'ABR':>6}  {'FPR':>6}")
-            print(f"  {'-'*35}")
-            for r in alpha_results:
-                star = " *" if abs(r["alpha"] - best_alpha) < 1e-6 else ""
-                print(f"  {r['alpha']:>5.1f}  {r['separation']:>10.4f}  "
-                      f"{r['abr_at_threshold']*100:>5.1f}%  "
-                      f"{r['fpr_at_threshold']*100:>5.1f}%{star}")
+            if not ascii_only:
+                svg = build_alpha_svg(alpha_results, best_alpha)
+                svg_path = output_dir / "alpha_sensitivity.svg"
+                svg_path.write_text(svg, encoding="utf-8")
+                print(f"  Alpha SVG              -> {svg_path}")
+
+            if not svg_only:
+                print(f"\n--- Alpha Sensitivity (best={best_alpha}) ---")
+                print(f"  {'Alpha':>5}  {'Separation':>10}  {'ABR':>6}  {'FPR':>6}")
+                print(f"  {'-'*35}")
+                for r in alpha_results:
+                    star = " *" if abs(r["alpha"] - best_alpha) < 1e-6 else ""
+                    print(f"  {r['alpha']:>5.1f}  {r['separation']:>10.4f}  "
+                          f"{r['abr_at_threshold']*100:>5.1f}%  "
+                          f"{r['fpr_at_threshold']*100:>5.1f}%{star}")
 
         alpha_generated = True
     else:
@@ -597,7 +792,7 @@ def generate_all_figures(
     fig_data_path = output_dir / "figure_data.json"
     with open(fig_data_path, "w", encoding="utf-8") as fh:
         json.dump(figure_data, fh, indent=2, default=str)
-    print(f"  Figure data   -> {fig_data_path}")
+    print(f"  Figure data            -> {fig_data_path}")
 
     return figure_data
 
@@ -608,7 +803,7 @@ if __name__ == "__main__":
     _REAL_LLM_SWEEP = _repo_root / "experiments" / "real_llm_sweep_summary.json"
 
     parser = argparse.ArgumentParser(
-        description="PACM Session 6/10 -- Paper figure generator (SVG + ASCII)."
+        description="PACM Session 6/11 -- Paper figure generator (SVG + ASCII)."
     )
     parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION))
     parser.add_argument(
@@ -617,7 +812,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--real", action="store_true",
-        help="Shortcut: use experiments/real_llm_sweep_summary.json as --sweep input.",
+        help="Shortcut: use experiments/real_llm_sweep_summary.json as --sweep input, "
+             "and --force-real-roc to build ROC honestly from sweep metrics.",
+    )
+    parser.add_argument(
+        "--force-real-roc", action="store_true", dest="force_real_roc",
+        help="Build ROC from sweep run metrics instead of calibration_result.json. "
+             "Prevents silent substitution of stale synthetic calibration data.",
     )
     parser.add_argument("--sensitivity", default=str(DEFAULT_SENSITIVITY))
     parser.add_argument(
@@ -631,11 +832,14 @@ if __name__ == "__main__":
                         help="Only generate SVG files (no ASCII terminal output).")
     args = parser.parse_args()
 
-    sweep_path = Path(_REAL_LLM_SWEEP if args.real else args.sweep)
+    # When --real is used, automatically force real ROC to prevent silent data
+    # substitution of stale synthetic calibration curves.
+    sweep_path = Path(REAL_SWEEP_PATH if args.real else args.sweep)
+    force_real_roc = args.force_real_roc or args.real
 
     print(f"\n{'='*60}")
-    print("  PACM Session 6/10 -- Paper Figure Generator")
-    print(f"  sweep={sweep_path.name}")
+    print("  PACM Session 6/11 -- Paper Figure Generator")
+    print(f"  sweep={sweep_path.name}  force_real_roc={force_real_roc}")
     print(f"{'='*60}")
 
     generate_all_figures(
@@ -645,4 +849,5 @@ if __name__ == "__main__":
         output_dir=Path(args.output_dir),
         ascii_only=args.ascii_only,
         svg_only=args.svg_only,
+        force_real_roc=force_real_roc,
     )

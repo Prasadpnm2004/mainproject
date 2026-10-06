@@ -1,43 +1,29 @@
 # PACM Benchmark Report
 
-> Generated: 2026-09-02T11:22:06.534170+00:00  |  Sweep ID: `c5b2d5bf`  |  Configs: 16  |  Tasks: 48
+> Generated: 2026-10-05T11:05:28.123976+00:00  |  Sweep ID: `bab8271d`  |  Configs: 2  |  Tasks: 6
 
 ## Experiment Configuration
 
-- **Harnesses**: langgraph, custom_loop
-- **Attack types**: ignore_previous, injec_agent
+- **Harnesses**: langgraph
+- **Attack types**: ignore_previous
 - **Modes**: undefended, defended
-- **Policies**: standard, conservative, aggressive
-- **Model**: llama3.2:3b (stub mode — no API key required)
+- **Policies**: standard
+- **Model**: qwen3:8b (stub mode — no API key required)
 
 ## Main Results
 
 **Table 1. PACM Defended vs. Undefended Agent Benchmark (stub mode)**
 
-| Mode | Harness | Attack | Policy | ABR (%) | BTSR (%) | FPR (%) | Lat. (ms) | Cost (est.) |
-|---|---|---|---|---:|---:|---:|---:|---:|
-| Undefended | custom-loop | IgnorePrev. | — | 0.0 | 100.0 | — | 2200.0 | $0.0002 |
-| Undefended | custom-loop | InjecAgent | — | 0.0 | 100.0 | — | 1800.0 | $0.0002 |
-| Undefended | langgraph | IgnorePrev. | — | 0.0 | 100.0 | — | 9100.0 | $0.0002 |
-| Undefended | langgraph | InjecAgent | — | 0.0 | 100.0 | — | 7200.0 | $0.0002 |
-| Defended | custom-loop | IgnorePrev. | Aggressive | 100.0 | 100.0 | 0.0 | 2000.0 | $0.0002 |
-| Defended | custom-loop | IgnorePrev. | Conservative | 0.0 | 100.0 | 0.0 | 2200.0 | $0.0002 |
-| Defended | custom-loop | IgnorePrev. | Standard | 0.0 | 100.0 | 0.0 | 2200.0 | $0.0002 |
-| Defended | custom-loop | InjecAgent | Aggressive | 100.0 | 100.0 | 0.0 | 1500.0 | $0.0002 |
-| Defended | custom-loop | InjecAgent | Conservative | 0.0 | 100.0 | 0.0 | 2000.0 | $0.0002 |
-| Defended | custom-loop | InjecAgent | Standard | 0.0 | 100.0 | 0.0 | 1900.0 | $0.0002 |
-| Defended | langgraph | IgnorePrev. | Aggressive | 100.0 | 100.0 | 0.0 | 6800.0 | $0.0002 |
-| Defended | langgraph | IgnorePrev. | Conservative | 0.0 | 100.0 | 0.0 | 7400.0 | $0.0002 |
-| Defended | langgraph | IgnorePrev. | Standard | 0.0 | 100.0 | 0.0 | 5300.0 | $0.0002 |
-| Defended | langgraph | InjecAgent | Aggressive | 100.0 | 100.0 | 0.0 | 7500.0 | $0.0002 |
-| Defended | langgraph | InjecAgent | Conservative | 0.0 | 100.0 | 0.0 | 8300.0 | $0.0002 |
-| Defended | langgraph | InjecAgent | Standard | 0.0 | 100.0 | 0.0 | 7600.0 | $0.0002 |
+| Mode | Harness | Attack | Policy | ABR (%) | ABR_incl. (%) | BTSR (%) | FPR (%) | Lat. (ms) | Cost (est.) |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|
+| Undefended | langgraph | IgnorePrev. | — | 0.0 | — | 100.0 | — | 386721.8 | $0.00 |
+| Defended | langgraph | IgnorePrev. | Standard | 0.0 | — | 100.0 | 0.0 | 237173.7 | $0.00 |
 
 ## Aggregate Summary (Defended Runs)
 
 | Metric | Value |
 |--------|-------|
-| Mean ABR  | 33.3% |
+| Mean ABR  | 0.0% |
 | Mean BTSR | 100.0% |
 | Mean FPR  | 0.0% |
 

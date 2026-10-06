@@ -58,12 +58,20 @@ def _lat_ms(v: Optional[float]) -> str:
         return "—"
     return f"{v*1000:.1f}"
 
-def _cost_est(n_tasks: int, wall_s: float) -> str:
+def _cost_est(n_tasks: int, wall_s: float, provider: str = "") -> str:
     """
-    Rough token cost estimate based on stub run characteristics.
-    For real LLM runs: replace with actual token counts from API responses.
+    Rough token cost estimate based on run characteristics.
+
+    For Ollama / local providers: cost is $0.00 (no API charges).
+    For OpenAI gpt-4o-mini: ~500 tokens/task at $0.15/1M = $0.000075/task.
+    For real LLM runs via paid API: replace with actual token counts.
     """
-    # ~500 tokens/task at $0.15/1M for gpt-4o-mini = $0.000075/task
+    if provider.lower() in ("ollama", "local", ""):
+        # Local inference — no API cost
+        # Only charge when provider is explicitly a paid API
+        if not provider or provider.lower() == "ollama":
+            return "$0.00"
+    # GPT-4o-mini estimate
     cost = n_tasks * 0.000075
     return f"${cost:.4f}"
 
@@ -95,6 +103,7 @@ def extract_rows(sweep_summary: dict[str, Any]) -> list[dict[str, Any]]:
     Returns list of row dicts with normalised column values.
     """
     rows = []
+    provider = sweep_summary.get("parameters", {}).get("llm_provider", "")
     for run in sweep_summary.get("runs", []):
         m = run.get("metrics", {})
         n_tasks = run.get("n_tasks", 0)
@@ -103,18 +112,20 @@ def extract_rows(sweep_summary: dict[str, Any]) -> list[dict[str, Any]]:
         latency_ms_val = (latency_mean_s * 1000) if latency_mean_s else None
 
         rows.append({
-            "mode":        run.get("mode", "?"),
-            "harness":     run.get("harness", "?").replace("_", "-"),
-            "attack":      _attack_display(run.get("attack")),
-            "policy":      _policy_display(run),
-            "abr":         m.get("abr"),
-            "btsr":        m.get("btsr"),
-            "fpr":         m.get("fpr"),
-            "latency_ms":  latency_ms_val,
-            "cost_est":    _cost_est(n_tasks, wall_s),
-            "n_tasks":     n_tasks,
-            "run_id":      run.get("run_id", ""),
-            "_label":      run.get("label", ""),
+            "mode":         run.get("mode", "?"),
+            "harness":      run.get("harness", "?").replace("_", "-"),
+            "attack":       _attack_display(run.get("attack")),
+            "policy":       _policy_display(run),
+            "abr":          m.get("abr"),
+            "abr_inclusive": m.get("abr_inclusive"),  # BLOCK+FLAG (human-defer)
+            "btsr":         m.get("btsr"),
+            "fpr":          m.get("fpr"),
+            # Store in seconds; _lat_ms() will multiply by 1000 for display
+            "latency_ms":   m.get("mean_latency_s"),
+            "cost_est":     _cost_est(n_tasks, wall_s, provider),
+            "n_tasks":      n_tasks,
+            "run_id":       run.get("run_id", ""),
+            "_label":       run.get("label", ""),
         })
 
     # Sort: undefended first, then by mode/harness/attack/policy
@@ -134,14 +145,17 @@ def build_markdown_table(rows: list[dict], caption: str = "") -> str:
     Build a Markdown table from row dicts.
 
     Format:
-    | Mode | Harness | Attack | Policy | ABR(%) | BTSR(%) | FPR(%) | Lat.(ms) | Cost |
+    | Mode | Harness | Attack | Policy | ABR(%) | ABR_incl.(%) | BTSR(%) | FPR(%) | Lat.(ms) | Cost |
+
+    ABR (strict): only BLOCK decisions count as attack-prevented.
+    ABR_incl.: BLOCK + FLAG decisions (FLAG defers to human review).
     """
     header = (
-        "| Mode | Harness | Attack | Policy | ABR (%) | BTSR (%) | FPR (%) | "
+        "| Mode | Harness | Attack | Policy | ABR (%) | ABR_incl. (%) | BTSR (%) | FPR (%) | "
         "Lat. (ms) | Cost (est.) |"
     )
     divider = (
-        "|---|---|---|---|---:|---:|---:|---:|---:|"
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|"
     )
     lines = []
     if caption:
@@ -156,6 +170,7 @@ def build_markdown_table(rows: list[dict], caption: str = "") -> str:
             f"| {r['attack']} "
             f"| {r['policy']} "
             f"| {_pct(r['abr'])} "
+            f"| {_pct(r.get('abr_inclusive'))} "
             f"| {_pct(r['btsr'])} "
             f"| {_pct(r['fpr'])} "
             f"| {_lat_ms(r['latency_ms'])} "
@@ -173,18 +188,19 @@ LATEX_HEADER = r"""\begin{table}[htbp]
   \small
   \caption{PACM Defended vs.\ Undefended Agent Benchmark Results}
   \label{tab:pacm_results}
-  \begin{tabular}{llllrrrrr}
+  \begin{tabular}{lllllrrrrrr}
     \toprule
-    Mode & Harness & Attack & Policy & ABR (\%) & BTSR (\%) & FPR (\%) & Lat.\ (ms) & Cost \\
+    Mode & Harness & Attack & Policy & ABR (\%) & ABR$_{\text{incl}}$ (\%) & BTSR (\%) & FPR (\%) & Lat.\ (ms) & Cost \\
     \midrule"""
 
 LATEX_FOOTER = r"""    \bottomrule
   \end{tabular}
   \begin{tablenotes}
     \small
-    \item ABR: Attack Block Rate. BTSR: Benign Task Success Rate. FPR: False Positive Rate.
-    \item Latency: mean wall-clock time per task. Cost: estimated token cost (gpt-4o-mini).
-    \item Stub-mode runs; real LLM results pending API key configuration.
+    \item ABR: Attack Block Rate (strict, BLOCK only). ABR$_{\text{incl}}$: BLOCK + FLAG (FLAG defers to human review).
+    \item BTSR: Benign Task Success Rate. FPR: False Positive Rate.
+    \item Latency: mean wall-clock time per task (ms). Cost: API token cost estimate.
+    \item Ollama/local runs show \$0.00 cost. Stub-mode results have no real LLM divergence.
   \end{tablenotes}
 \end{table}"""
 
@@ -203,18 +219,19 @@ def build_latex_table(rows: list[dict]) -> str:
             lines.append(r"    \midrule")
         prev_mode = r["mode"]
 
-        abr  = _pct(r["abr"])  + r"\%" if r["abr"]  is not None else "---"
-        btsr = _pct(r["btsr"]) + r"\%" if r["btsr"] is not None else "---"
-        fpr  = _pct(r["fpr"])  + r"\%" if r["fpr"]  is not None else "---"
-        lat  = _lat_ms(r["latency_ms"]) if r["latency_ms"] else "---"
-        cost = r["cost_est"]
+        abr      = _pct(r["abr"])          + r"\%" if r["abr"]          is not None else "---"
+        abr_incl = _pct(r.get("abr_inclusive")) + r"\%" if r.get("abr_inclusive") is not None else "---"
+        btsr     = _pct(r["btsr"])         + r"\%" if r["btsr"]         is not None else "---"
+        fpr      = _pct(r["fpr"])          + r"\%" if r["fpr"]          is not None else "---"
+        lat      = _lat_ms(r["latency_ms"]) if r["latency_ms"] else "---"
+        cost     = r["cost_est"]
 
         row = (
             f"    {_tex_escape(r['mode'].capitalize())} & "
             f"{_tex_escape(r['harness'])} & "
             f"{_tex_escape(r['attack'])} & "
             f"{_tex_escape(r['policy'])} & "
-            f"{abr} & {btsr} & {fpr} & {lat} & {cost} \\\\"
+            f"{abr} & {abr_incl} & {btsr} & {fpr} & {lat} & {cost} \\\\"
         )
         lines.append(row)
 

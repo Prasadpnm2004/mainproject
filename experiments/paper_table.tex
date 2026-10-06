@@ -3,33 +3,20 @@
   \small
   \caption{PACM Defended vs.\ Undefended Agent Benchmark Results}
   \label{tab:pacm_results}
-  \begin{tabular}{llllrrrrr}
+  \begin{tabular}{lllllrrrrrr}
     \toprule
-    Mode & Harness & Attack & Policy & ABR (\%) & BTSR (\%) & FPR (\%) & Lat.\ (ms) & Cost \\
+    Mode & Harness & Attack & Policy & ABR (\%) & ABR$_{\text{incl}}$ (\%) & BTSR (\%) & FPR (\%) & Lat.\ (ms) & Cost \\
     \midrule
-    Undefended & custom-loop & IgnorePrev. & — & 0.0\% & 100.0\% & --- & 2200.0 & $0.0002 \\
-    Undefended & custom-loop & InjecAgent & — & 0.0\% & 100.0\% & --- & 1800.0 & $0.0002 \\
-    Undefended & langgraph & IgnorePrev. & — & 0.0\% & 100.0\% & --- & 9100.0 & $0.0002 \\
-    Undefended & langgraph & InjecAgent & — & 0.0\% & 100.0\% & --- & 7200.0 & $0.0002 \\
+    Undefended & langgraph & IgnorePrev. & — & 0.0\% & --- & 100.0\% & --- & 386721.8 & $0.00 \\
     \midrule
-    Defended & custom-loop & IgnorePrev. & Aggressive & 100.0\% & 100.0\% & 0.0\% & 2000.0 & $0.0002 \\
-    Defended & custom-loop & IgnorePrev. & Conservative & 0.0\% & 100.0\% & 0.0\% & 2200.0 & $0.0002 \\
-    Defended & custom-loop & IgnorePrev. & Standard & 0.0\% & 100.0\% & 0.0\% & 2200.0 & $0.0002 \\
-    Defended & custom-loop & InjecAgent & Aggressive & 100.0\% & 100.0\% & 0.0\% & 1500.0 & $0.0002 \\
-    Defended & custom-loop & InjecAgent & Conservative & 0.0\% & 100.0\% & 0.0\% & 2000.0 & $0.0002 \\
-    Defended & custom-loop & InjecAgent & Standard & 0.0\% & 100.0\% & 0.0\% & 1900.0 & $0.0002 \\
-    Defended & langgraph & IgnorePrev. & Aggressive & 100.0\% & 100.0\% & 0.0\% & 6800.0 & $0.0002 \\
-    Defended & langgraph & IgnorePrev. & Conservative & 0.0\% & 100.0\% & 0.0\% & 7400.0 & $0.0002 \\
-    Defended & langgraph & IgnorePrev. & Standard & 0.0\% & 100.0\% & 0.0\% & 5300.0 & $0.0002 \\
-    Defended & langgraph & InjecAgent & Aggressive & 100.0\% & 100.0\% & 0.0\% & 7500.0 & $0.0002 \\
-    Defended & langgraph & InjecAgent & Conservative & 0.0\% & 100.0\% & 0.0\% & 8300.0 & $0.0002 \\
-    Defended & langgraph & InjecAgent & Standard & 0.0\% & 100.0\% & 0.0\% & 7600.0 & $0.0002 \\
+    Defended & langgraph & IgnorePrev. & Standard & 0.0\% & --- & 100.0\% & 0.0\% & 237173.7 & $0.00 \\
     \bottomrule
   \end{tabular}
   \begin{tablenotes}
     \small
-    \item ABR: Attack Block Rate. BTSR: Benign Task Success Rate. FPR: False Positive Rate.
-    \item Latency: mean wall-clock time per task. Cost: estimated token cost (gpt-4o-mini).
-    \item Stub-mode runs; real LLM results pending API key configuration.
+    \item ABR: Attack Block Rate (strict, BLOCK only). ABR$_{\text{incl}}$: BLOCK + FLAG (FLAG defers to human review).
+    \item BTSR: Benign Task Success Rate. FPR: False Positive Rate.
+    \item Latency: mean wall-clock time per task (ms). Cost: API token cost estimate.
+    \item Ollama/local runs show \$0.00 cost. Stub-mode results have no real LLM divergence.
   \end{tablenotes}
 \end{table}

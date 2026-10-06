@@ -32,7 +32,34 @@ load_dotenv(_repo_root / ".env")
 
 REAL_SWEEP_JSON  = _repo_root / "experiments" / "real_llm_sweep_summary.json"
 FIGURES_DIR      = _repo_root / "experiments" / "figures"
-PYTHON           = sys.executable
+
+# Resolve the Python interpreter to use for subprocesses.
+# If the current process is NOT running inside the project's .venv,
+# locate the venv Python explicitly so all subprocesses have the correct
+# packages (langchain_core, etc.).  This prevents the failure where
+# `python` on PATH resolves to the bare system interpreter.
+def _resolve_python() -> str:
+    venv_root = _repo_root / ".venv"
+    candidates = [
+        venv_root / "Scripts" / "python.exe",   # Windows
+        venv_root / "bin" / "python",            # POSIX
+        venv_root / "bin" / "python3",           # POSIX alt
+    ]
+    current = Path(sys.executable).resolve()
+    # If already inside the venv, use as-is
+    try:
+        current.relative_to(venv_root.resolve())
+        return sys.executable
+    except ValueError:
+        pass
+    # Otherwise prefer the first existing venv candidate
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    # Fall back to sys.executable and let the user fix it
+    return sys.executable
+
+PYTHON = _resolve_python()
 
 
 def _run(cmd: list[str], label: str) -> int:
@@ -65,6 +92,14 @@ def main() -> int:
     parser.add_argument(
         "--skip-probe", action="store_true",
         help="Skip the backend probe step (use if already verified).",
+    )
+    parser.add_argument(
+        "--samples-per-config", type=int, default=1, dest="samples_per_config",
+        help=(
+            "Number of independent task-set runs per config (default: 1). "
+            "Set to 3 for a pilot multi-sample run. "
+            "ABR_inclusive (BLOCK+FLAG) is reported alongside strict ABR."
+        ),
     )
     parser.add_argument(
         "--log-level", default="INFO",
@@ -102,6 +137,8 @@ def main() -> int:
         ]
         if args.quick:
             sweep_cmd.append("--quick")
+        if args.samples_per_config > 1:
+            sweep_cmd.extend(["--samples-per-config", str(args.samples_per_config)])
 
         rc = _run(sweep_cmd, "2/4 Full 14-Config Sweep")
         if rc != 0:
