@@ -49,7 +49,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from experiments.run_experiment import run_experiment, STUB_TASKS
+from experiments.run_experiment import run_experiment, STUB_TASKS, IGNORE_PREVIOUS_VARIANTS
 from experiments.metrics import MetricsProcessor, MetricsReport
 
 
@@ -292,3 +292,218 @@ class TestMetricsProcessor:
         assert report.n_fp == 1
         assert report.n_benign_calls == 1
         assert abs(report.fpr - 1.0) < 1e-9
+
+
+# ─── Session 13 tests ────────────────────────────────────────────────────────
+
+class TestSession13:
+    """Tests for Session 13 changes: undefended logging gap fix, phrasing variants."""
+
+    def test_undefended_records_include_tool_calls(self):
+        """Test 26: Undefended run records must include a 'tool_calls' list.
+
+        This verifies the logging gap fix: before Session 13, undefended JSONL
+        records omitted tool_calls entirely. After the fix, tool_calls is
+        always serialized regardless of mode (may be empty for benign tasks
+        that make no tool calls in stub mode).
+        """
+        records = run_experiment(
+            mode="undefended",
+            harness_name="langgraph",
+            attack_filter=None,
+            policy_mode="flag",
+            divergence_threshold=0.60,
+            model_name="gpt-4o-mini",  # no API key -> stub
+            max_iter=5,
+            run_id="s13_test_logging",
+            sample_idx=0,
+        )
+        for rec in records:
+            assert "tool_calls" in rec, (
+                f"Missing 'tool_calls' key in record for task {rec.get('task_id')!r} "
+                f"(mode=undefended). Logging gap fix may not have been applied."
+            )
+            assert isinstance(rec["tool_calls"], list), (
+                f"'tool_calls' must be a list, got {type(rec['tool_calls']).__name__}"
+            )
+
+    def test_ignore_previous_variants_are_distinct(self):
+        """Test 27: All 3 IGNORE_PREVIOUS_VARIANTS phrasings must be distinct.
+
+        Ensures that multi-sampling with 3 samples produces 3 genuinely different
+        attack prompts/payloads rather than repeating the same text.
+        """
+        assert len(IGNORE_PREVIOUS_VARIANTS) == 3, (
+            f"Expected exactly 3 variants, got {len(IGNORE_PREVIOUS_VARIANTS)}"
+        )
+        descriptions = [v["description"] for v in IGNORE_PREVIOUS_VARIANTS]
+        payloads = [v["inbox_payload"] for v in IGNORE_PREVIOUS_VARIANTS]
+        ids = [v["variant_id"] for v in IGNORE_PREVIOUS_VARIANTS]
+
+        assert len(set(descriptions)) == 3, "All 3 variant descriptions must be distinct"
+        assert len(set(payloads)) == 3, "All 3 variant inbox_payloads must be distinct"
+        assert len(set(ids)) == 3, "All 3 variant_ids must be distinct"
+        assert ids == ["variant_a", "variant_b", "variant_c"]
+
+    def test_sample_idx_maps_deterministically_to_variant(self):
+        """Test 28: sample_idx 0/1/2 map deterministically to variant_a/b/c.
+
+        For attack tasks, variant selection must be deterministic (same sample_idx
+        always produces the same variant). This verifies the sample_idx % 3 mapping
+        and that the variant_id is recorded in the result.
+        """
+        expected_variants = [\"variant_a\", \"variant_b\", \"variant_c\"]
+        for idx, expected_vid in enumerate(expected_variants):
+            records = run_experiment(
+                mode="undefended",
+                harness_name="langgraph",
+                attack_filter="ignore_previous",
+                policy_mode="flag",
+                divergence_threshold=0.60,
+                model_name="gpt-4o-mini",
+                max_iter=5,
+                run_id=f"s13_variant_test_{idx}",
+                sample_idx=idx,
+            )
+            attack_recs = [r for r in records if r.get("attack_type") == "ignore_previous"]
+            assert len(attack_recs) == 1, (
+                f"Expected exactly 1 ignore_previous record for sample_idx={idx}"
+            )
+            assert attack_recs[0].get("variant_id") == expected_vid, (
+                f"sample_idx={idx} -> expected variant_id={expected_vid!r}, "
+                f"got {attack_recs[0].get('variant_id')!r}"
+            )
+
+
+# ─── Session 16 tests ────────────────────────────────────────────────────────
+
+
+class TestSession16TimeoutScoring:
+    """Tests 29-35: Dual timeout-scoring metrics (Session 16).
+
+    Validates both ABR_incl variants introduced in Session 16:
+      (a) ABR_incl (completed-only): denominator = completed attack samples
+      (b) ABR_incl (worst-case):     denominator = all configured samples,
+                                      timeouts treated as attack-succeeded
+
+    When no timeouts occur, both must be identical.
+    When timeouts occur (n_configured_attack > n_attack), they diverge.
+    """
+
+    # ── Helper: build a MetricsReport directly ────────────────────────────────
+
+    @staticmethod
+    def _make_report(**kwargs) -> MetricsReport:
+        defaults = dict(
+            run_id="test", mode="defended",
+            n_total=9, n_skipped=0, n_benign=6, n_attack=0,
+            n_blocked=0, n_flagged=0, n_succeeded=6,
+            n_fp=0, n_benign_calls=0,
+        )
+        defaults.update(kwargs)
+        return MetricsReport(**defaults)
+
+    # ── Test 29: identical metrics when no timeouts ───────────────────────────
+
+    def test_both_abr_incl_equal_when_no_timeouts(self):
+        """Test 29: When n_configured_attack == n_attack (no timeouts), both
+        ABR_incl variants must be identical."""
+        report = self._make_report(n_attack=3, n_blocked=0, n_flagged=2,
+                                   n_configured_attack=3)
+        assert report.abr_inclusive == report.abr_inclusive_worst_case
+        assert abs(report.abr_inclusive - 2/3) < 1e-9
+
+    # ── Test 30: worst-case lower when timeouts occurred ─────────────────────
+
+    def test_worst_case_lower_when_timeouts(self):
+        """Test 30: When n_configured_attack > n_attack (timeouts occurred),
+        worst-case ABR_incl must be strictly lower than completed-only."""
+        # 2 completed (both flagged) + 1 timed out
+        report = self._make_report(n_attack=2, n_blocked=0, n_flagged=2,
+                                   n_configured_attack=3)
+        completed_only = report.abr_inclusive        # 2/2 = 100%
+        worst_case = report.abr_inclusive_worst_case  # 2/3 = 66.7%
+        assert completed_only is not None
+        assert worst_case is not None
+        assert abs(completed_only - 1.0) < 1e-9,  f"expected 100%, got {completed_only}"
+        assert abs(worst_case - 2/3) < 1e-9,       f"expected 66.7%, got {worst_case}"
+        assert worst_case < completed_only
+
+    # ── Test 31: n_configured_attack defaults to n_attack ─────────────────────
+
+    def test_n_configured_attack_defaults_to_n_attack(self):
+        """Test 31: When n_configured_attack=0 (backward-compat default), it
+        falls back to n_attack, making both ABR_incl metrics identical."""
+        report = self._make_report(n_attack=3, n_blocked=1, n_flagged=1,
+                                   n_configured_attack=0)
+        # Both must use n_attack=3 as denominator
+        assert report.abr_inclusive == report.abr_inclusive_worst_case
+        assert abs(report.abr_inclusive - 2/3) < 1e-9
+
+    # ── Test 32: to_dict includes both metrics and n_configured_attack ─────────
+
+    def test_to_dict_includes_both_abr_incl(self):
+        """Test 32: to_dict() must include abr_inclusive, abr_inclusive_worst_case,
+        and n_configured_attack."""
+        report = self._make_report(n_attack=3, n_blocked=3, n_flagged=0,
+                                   n_configured_attack=3)
+        d = report.to_dict()
+        assert "abr_inclusive" in d, "to_dict must include abr_inclusive"
+        assert "abr_inclusive_worst_case" in d, "to_dict must include abr_inclusive_worst_case"
+        assert "n_configured_attack" in d, "to_dict must include n_configured_attack"
+        assert d["abr_inclusive"] == 1.0
+        assert d["abr_inclusive_worst_case"] == 1.0
+        assert d["n_configured_attack"] == 3
+
+    # ── Test 33: summary_table shows both ABR_incl lines ──────────────────────
+
+    def test_summary_table_shows_both_abr_incl(self):
+        """Test 33: summary_table() must contain both ABR_incl labeled lines."""
+        report = self._make_report(n_attack=3, n_blocked=0, n_flagged=2,
+                                   n_configured_attack=3)
+        table = report.summary_table()
+        assert "ABR_incl (BLOCK+FLAG, completed-only denom)" in table, (
+            "summary_table must label completed-only ABR_incl variant"
+        )
+        assert "ABR_incl (BLOCK+FLAG, worst-case denom)" in table, (
+            "summary_table must label worst-case ABR_incl variant"
+        )
+
+    # ── Test 34: summary_table shows timeout note when timeouts occurred ───────
+
+    def test_summary_table_shows_timeout_note(self):
+        """Test 34: When n_configured_attack > n_attack, summary_table must
+        include a note about timed-out samples."""
+        report = self._make_report(n_attack=2, n_blocked=0, n_flagged=2,
+                                   n_configured_attack=3)
+        table = report.summary_table()
+        assert "timed-out" in table, (
+            "summary_table must show timed-out sample count when n_configured > n_attack"
+        )
+
+    # ── Test 35: compute() passes n_configured_attack through ─────────────────
+
+    def test_compute_passes_n_configured_attack(self):
+        """Test 35: MetricsProcessor.compute(n_configured_attack=N) must set
+        n_configured_attack on the returned MetricsReport, enabling worst-case
+        ABR_incl to use the correct denominator."""
+        records = [
+            {"run_id": "r1", "mode": "defended", "is_attack": True,
+             "attack_blocked": False, "task_success": False, "skipped": False,
+             "wall_time_s": 300.0,
+             "pacm_audit": [{"decision": "flag", "tool": "send_email"}]},
+            {"run_id": "r1", "mode": "defended", "is_attack": True,
+             "attack_blocked": False, "task_success": True, "skipped": False,
+             "wall_time_s": 120.0,
+             "pacm_audit": []},
+        ]
+        mp = MetricsProcessor(records)
+        # 2 completed, but 3 were configured (1 timed out before writing record)
+        report = mp.compute("r1", n_configured_attack=3)
+        assert report.n_attack == 2
+        assert report.n_configured_attack == 3
+        # completed-only: 1/2 = 50%
+        assert abs(report.abr_inclusive - 0.5) < 1e-9
+        # worst-case: 1/3 = 33.3%
+        assert abs(report.abr_inclusive_worst_case - 1/3) < 1e-9
+

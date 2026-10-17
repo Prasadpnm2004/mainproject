@@ -1,9 +1,9 @@
 
 ============================================================
-  PACM Session 6/10 -- Paper Figure Generator
-  sweep=full_sweep_summary.json
+  PACM Session 6/11 -- Paper Figure Generator
+  sweep=full_sweep_summary.json  force_real_roc=False
 ============================================================
-  ROC SVG       -> D:\mainproject\experiments\figures\roc_curve.svg
+  ROC SVG (calibration)  -> D:\mainproject\experiments\figures\roc_curve.svg
 
 --- ABR vs. FPR Pareto Frontier ---
   ABR^  PACM ROC Frontier (10 points)
@@ -31,7 +31,7 @@
             0%         20%         41%         61%         81%       > FPR
 
   O = Optimal (ABR=98%, FPR=6%)
-  Latency SVG   -> D:\mainproject\experiments\figures\latency_comparison.svg
+  Latency SVG            -> D:\mainproject\experiments\figures\latency_comparison.svg
 
 --- Latency Overhead Comparison ---
 
@@ -54,7 +54,7 @@
   defended/custom_loop/injec_age     1.6  ################
   defended/custom_loop/injec_age     2.2  ######################
   defended/custom_loop/injec_age     2.3  #######################
-  Alpha SVG     -> D:\mainproject\experiments\figures\alpha_sensitivity.svg
+  Alpha SVG              -> D:\mainproject\experiments\figures\alpha_sensitivity.svg
 
 --- Alpha Sensitivity (best=0.9) ---
   Alpha  Separation     ABR     FPR
@@ -64,4 +64,4 @@
     0.7      0.4217   85.5%    0.0%
     0.8      0.4502   90.5%    0.0%
     0.9      0.4787   96.0%    0.0% *
-  Figure data   -> D:\mainproject\experiments\figures\figure_data.json
+  Figure data            -> D:\mainproject\experiments\figures\figure_data.json

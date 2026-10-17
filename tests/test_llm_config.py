@@ -345,3 +345,157 @@ class TestLLMConfigProperties:
                         base_url=None, api_key=None)
         with pytest.raises((AttributeError, TypeError)):
             cfg.model = "gpt-4o"  # type: ignore[misc]
+
+
+# ── Session 14: LLM_DISABLE_THINKING tests ───────────────────────────────────
+
+class TestDisableThinking:
+    """Tests for the LLM_DISABLE_THINKING environment variable and its effect
+    on build_chat_model() extra_body injection.
+
+    All tests are purely offline — no Ollama or OpenAI calls made.
+    """
+
+    def test_llm_disable_thinking_env_sets_flag(self):
+        """LLM_DISABLE_THINKING=1 → config.disable_thinking is True."""
+        env = {
+            "LLM_PROVIDER": "ollama",
+            "LLM_MODEL": "qwen3:8b",
+            "LLM_BASE_URL": _OLLAMA_DEFAULT_BASE_URL,
+            "LLM_API_KEY": "ollama",
+            "LLM_DISABLE_THINKING": "1",
+            "PACM_FORCE_STUB": "1",
+        }
+        with patch("os.environ", env):
+            cfg = load_llm_config()
+        assert cfg.disable_thinking is True, (
+            "LLM_DISABLE_THINKING=1 must set disable_thinking=True"
+        )
+
+    def test_disable_thinking_defaults_to_false(self):
+        """LLM_DISABLE_THINKING absent (or empty) → config.disable_thinking is False."""
+        env = {
+            "LLM_PROVIDER": "ollama",
+            "LLM_MODEL": "qwen3:8b",
+            "LLM_BASE_URL": _OLLAMA_DEFAULT_BASE_URL,
+            "LLM_API_KEY": "ollama",
+            "PACM_FORCE_STUB": "1",
+        }
+        with patch("os.environ", env):
+            cfg = load_llm_config()
+        assert cfg.disable_thinking is False, (
+            "Missing LLM_DISABLE_THINKING must leave disable_thinking=False"
+        )
+
+    def test_build_chat_model_passes_extra_body_for_ollama(self):
+        """When disable_thinking=True + provider=ollama, extra_body={'think':False} injected."""
+        cfg = LLMConfig(
+            provider="ollama",
+            model="qwen3:8b",
+            base_url=_OLLAMA_DEFAULT_BASE_URL,
+            api_key="ollama",
+            disable_thinking=True,
+        )
+        mock_cls = MagicMock()
+        with patch("src.llm_config.ChatOpenAI", mock_cls):
+            build_chat_model(cfg, temperature=0)
+
+        call_kwargs = mock_cls.call_args.kwargs
+        assert "extra_body" in call_kwargs, (
+            "extra_body must be present in ChatOpenAI kwargs when disable_thinking=True"
+        )
+        assert call_kwargs["extra_body"] == {"think": False}, (
+            f"extra_body must be {{'think': False}}, got {call_kwargs['extra_body']!r}"
+        )
+
+    def test_build_chat_model_no_extra_body_for_openai(self):
+        """When provider=openai, extra_body must NOT be injected even if disable_thinking=True.
+        OpenAI's API does not accept 'think' and would return a 400 error.
+        """
+        cfg = LLMConfig(
+            provider="openai",
+            model="gpt-4o-mini",
+            base_url=None,
+            api_key="sk-test-key",
+            disable_thinking=True,  # flag set but provider is openai → no injection
+        )
+        mock_cls = MagicMock()
+        with patch("src.llm_config.ChatOpenAI", mock_cls):
+            build_chat_model(cfg, temperature=0)
+
+        call_kwargs = mock_cls.call_args.kwargs
+        assert "extra_body" not in call_kwargs, (
+            "extra_body must NOT be present for OpenAI provider (would cause API 400)"
+        )
+
+
+
+# -- Session 14 (timeout): LLM_REQUEST_TIMEOUT tests -------------------------
+
+class TestRequestTimeout:
+    """Tests for LLM_REQUEST_TIMEOUT env var and request_timeout field."""
+
+    def test_ollama_default_timeout_is_300(self):
+        """Ollama provider gets request_timeout=300.0 by default."""
+        import os
+        from unittest.mock import patch
+        from src.llm_config import load_llm_config, _OLLAMA_DEFAULT_BASE_URL
+        env = {
+            "LLM_PROVIDER": "ollama",
+            "LLM_MODEL": "qwen3:8b",
+            "LLM_BASE_URL": _OLLAMA_DEFAULT_BASE_URL,
+            "LLM_API_KEY": "ollama",
+            "PACM_FORCE_STUB": "1",
+        }
+        with patch("os.environ", env):
+            cfg = load_llm_config()
+        assert cfg.request_timeout == 300.0, f"Ollama default must be 300.0, got {cfg.request_timeout}"
+
+    def test_llm_request_timeout_env_overrides_default(self):
+        """LLM_REQUEST_TIMEOUT=120 sets request_timeout=120.0."""
+        from unittest.mock import patch
+        from src.llm_config import load_llm_config, _OLLAMA_DEFAULT_BASE_URL
+        env = {
+            "LLM_PROVIDER": "ollama",
+            "LLM_MODEL": "qwen3:8b",
+            "LLM_BASE_URL": _OLLAMA_DEFAULT_BASE_URL,
+            "LLM_API_KEY": "ollama",
+            "LLM_REQUEST_TIMEOUT": "120",
+            "PACM_FORCE_STUB": "1",
+        }
+        with patch("os.environ", env):
+            cfg = load_llm_config()
+        assert cfg.request_timeout == 120.0, f"Expected 120.0, got {cfg.request_timeout}"
+
+    def test_openai_default_timeout_is_none(self):
+        """OpenAI provider gets request_timeout=None by default."""
+        from unittest.mock import patch
+        from src.llm_config import load_llm_config
+        env = {
+            "LLM_PROVIDER": "openai",
+            "LLM_MODEL": "gpt-4o-mini",
+            "LLM_API_KEY": "sk-test",
+            "PACM_FORCE_STUB": "1",
+        }
+        with patch("os.environ", env):
+            cfg = load_llm_config()
+        assert cfg.request_timeout is None, f"OpenAI timeout must be None, got {cfg.request_timeout}"
+
+    def test_build_chat_model_passes_request_timeout(self):
+        """request_timeout forwarded to ChatOpenAI kwargs."""
+        from unittest.mock import patch, MagicMock
+        from src.llm_config import LLMConfig, build_chat_model, _OLLAMA_DEFAULT_BASE_URL
+        cfg = LLMConfig(
+            provider="ollama",
+            model="qwen3:8b",
+            base_url=_OLLAMA_DEFAULT_BASE_URL,
+            api_key="ollama",
+            request_timeout=300.0,
+        )
+        mock_cls = MagicMock()
+        with patch("src.llm_config.ChatOpenAI", mock_cls):
+            build_chat_model(cfg, temperature=0)
+        call_kwargs = mock_cls.call_args.kwargs
+        assert call_kwargs.get("request_timeout") == 300.0, (
+            f"request_timeout=300.0 must be in ChatOpenAI kwargs, got {call_kwargs}"
+        )

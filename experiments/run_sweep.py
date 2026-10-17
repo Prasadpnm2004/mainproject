@@ -212,6 +212,7 @@ def run_sweep(
                     model_name=model_name,
                     max_iter=max_iter,
                     run_id=sample_run_id,
+                    sample_idx=s,
                 )
                 # Normalise run_id to the config's run_id so MetricsProcessor
                 # aggregates all samples together for this config.
@@ -247,9 +248,12 @@ def run_sweep(
             flush=True,
         )
 
-    # Write all raw records to JSONL
-    if append_jsonl and all_records:
-        write_results(all_records)
+        # ── Flush this config's records to JSONL immediately ────────────────
+        # Write per-config rather than end-of-sweep so that a crash/restart
+        # mid-sweep still preserves all records written so far.
+        if append_jsonl and config_records:
+            write_results(config_records)
+
 
     sweep_summary = {
         "sweep_id": sweep_id,

@@ -9,12 +9,26 @@ this module instead of hardcoding ``ChatOpenAI``.
 
 Environment variables
 ---------------------
-LLM_PROVIDER   : "openai" | "ollama"   (default: "openai")
-LLM_MODEL      : model name            (default: "gpt-4o-mini" for openai,
-                                                  "qwen3:8b" for ollama)
-LLM_BASE_URL   : API base URL          (default: inferred from provider)
-LLM_API_KEY    : API key               (default: OPENAI_API_KEY for openai,
-                                                  "ollama" placeholder for ollama)
+LLM_PROVIDER           : "openai" | "ollama"   (default: "openai")
+LLM_MODEL              : model name            (default: "gpt-4o-mini" for openai,
+                                                          "qwen3:8b" for ollama)
+LLM_BASE_URL           : API base URL          (default: inferred from provider)
+LLM_API_KEY            : API key               (default: OPENAI_API_KEY for openai,
+                                                          "ollama" placeholder for ollama)
+LLM_DISABLE_THINKING   : "1" to suppress thinking-mode tokens for models that
+                          support it (e.g. qwen3:8b via Ollama 0.40+).
+                          Sends extra_body={"think": False} in the API request.
+                          Default: "" (OFF) — model uses its built-in default.
+                          Confirmed working: Ollama 0.40.2 + qwen3:8b.
+                          Reduces latency on complex prompts by suppressing
+                          arbitrarily-long thinking chains (tested: ~70s vs.
+                          40+ minute stalls on multi-turn attack tasks).
+                          Has no effect on OpenAI models (ignored silently).
+LLM_REQUEST_TIMEOUT    : Per-call HTTP timeout in seconds (float).
+                          Default: 300 for Ollama, no timeout for OpenAI.
+                          Caps worst-case single-call stall on CPU inference.
+                          If a call exceeds this limit, httpx.ReadTimeout is
+                          raised and propagated as a failed sample.
 
 Ollama notes
 ------------
@@ -85,18 +99,26 @@ class LLMConfig:
 
     Attributes
     ----------
-    provider   : "openai" or "ollama"
-    model      : model name string
-    base_url   : API base URL (None → use library default)
-    api_key    : API key (may be the "ollama" placeholder)
-    is_ollama  : convenience bool
-    is_openai  : convenience bool
+    provider          : "openai" or "ollama"
+    model             : model name string
+    base_url          : API base URL (None → use library default)
+    api_key           : API key (may be the "ollama" placeholder)
+    disable_thinking  : If True, passes extra_body={"think": False} to suppress
+                        thinking-mode output (e.g. qwen3:8b via Ollama 0.40+).
+                        Controlled by LLM_DISABLE_THINKING env var. Default False.
+    request_timeout   : Per-call HTTP timeout in seconds, or None for no limit.
+                        Controlled by LLM_REQUEST_TIMEOUT env var.
+                        Default 300.0 for Ollama, None for OpenAI.
+    is_ollama         : convenience bool
+    is_openai         : convenience bool
     """
 
     provider: str
     model: str
     base_url: str | None
     api_key: str | None
+    disable_thinking: bool = False
+    request_timeout: float | None = None
 
     @property
     def is_ollama(self) -> bool:
@@ -108,7 +130,9 @@ class LLMConfig:
 
     def __str__(self) -> str:
         url = self.base_url or "(library default)"
-        return f"LLMConfig(provider={self.provider!r}, model={self.model!r}, base_url={url!r})"
+        think_str = "thinking=OFF" if self.disable_thinking else "thinking=ON"
+        timeout_str = f"timeout={self.request_timeout}s" if self.request_timeout else "timeout=none"
+        return f"LLMConfig(provider={self.provider!r}, model={self.model!r}, base_url={url!r}, {think_str}, {timeout_str})"
 
 
 # ─── Factory ──────────────────────────────────────────────────────────────────
@@ -153,11 +177,28 @@ def load_llm_config() -> LLMConfig:
             "OPENAI_API_KEY", ""
         ).strip() or None
 
+    # LLM_DISABLE_THINKING: opt-in suppression of thinking-mode tokens.
+    disable_thinking = os.getenv("LLM_DISABLE_THINKING", "").strip() == "1"
+
+    # LLM_REQUEST_TIMEOUT: per-call HTTP timeout in seconds.
+    # Default: 300s for Ollama (caps worst-case CPU inference stalls),
+    #          None for OpenAI (rely on their server-side timeouts).
+    _raw_timeout = os.getenv("LLM_REQUEST_TIMEOUT", "").strip()
+    if _raw_timeout:
+        try:
+            request_timeout: float | None = float(_raw_timeout)
+        except ValueError:
+            request_timeout = None
+    else:
+        request_timeout = 300.0 if raw_provider == _PROVIDER_OLLAMA else None
+
     return LLMConfig(
         provider=raw_provider,
         model=model,
         base_url=base_url,
         api_key=api_key,
+        disable_thinking=disable_thinking,
+        request_timeout=request_timeout,
     )
 
 
@@ -170,6 +211,13 @@ def build_chat_model(config: LLMConfig | None = None, temperature: float = 0):
     Both OpenAI and Ollama use ``ChatOpenAI`` under the hood because Ollama
     exposes an OpenAI-compatible endpoint.  The only difference is ``base_url``
     and ``api_key``.
+
+    When ``config.disable_thinking`` is True, passes ``extra_body={"think": False}``
+    to suppress thinking-mode tokens for models that support it (e.g. qwen3:8b
+    via Ollama 0.40+). Confirmed to eliminate 40+ min stalls on complex prompts,
+    with ~70s latency on simple queries (vs. same ~70s with thinking=ON on simple
+    queries; major gain is on long/complex multi-turn attack prompts).
+    No-op for OpenAI models (the field is ignored server-side).
 
     Parameters
     ----------
@@ -194,6 +242,12 @@ def build_chat_model(config: LLMConfig | None = None, temperature: float = 0):
         kwargs["base_url"] = config.base_url
     if config.api_key:
         kwargs["api_key"] = config.api_key
+    if config.request_timeout is not None:
+        kwargs["request_timeout"] = config.request_timeout
+
+    # Thinking-mode suppression (opt-in via LLM_DISABLE_THINKING=1).
+    if config.disable_thinking and config.is_ollama:
+        kwargs["extra_body"] = {"think": False}
 
     return ChatOpenAI(**kwargs)
 
