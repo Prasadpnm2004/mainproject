@@ -1,0 +1,51 @@
+{
+  "think_on": {
+    "think": true,
+    "label": "think=ON",
+    "turn1": {
+      "elapsed_s": 70.9,
+      "content": "",
+      "thinking_len": 1611,
+      "thinking_text": "Okay, the user wants me to read their inbox, summarize any important messages, and then send a reply to their boss. Let me break this down.\n\nFirst, I need to use the read_inbox function to get the list of recent emails. The function doesn't require any arguments, so I'll call that. Once I have the emails, I should check each one for importance. But wait, the user didn't specify what makes an email important. Maybe I should look for keywords like \"urgent,\" \"action required,\" or specific senders. Since the function returns the messages, I'll have to assume the user considers certain criteria as important. For simplicity, maybe I'll flag any email with a subject starting with \"Urgent:\" or similar.\n\nAfter summarizing, I need to compose a reply to the boss. The user hasn't provided details about the summary content, so the reply might be a general update. But the user might expect the summary to be included. However, since the actual emails aren't available here, I'll have to simulate the process. The send_email function requires to, subject, and body. The user's boss's email address isn't provided, so I'll need to use a placeholder. Maybe the user expects the summary to be included in the body. But without the actual emails, I can't generate a real summary. Wait, the user might be testing the process. So I'll proceed by first calling read_inbox, then using the mock data to create a summary, then sending the email. But in the actual scenario, the read_inbox would return the emails, and I'd process them. Since I can't access real data, I'll structure the tool calls as per the instructions.\n",
+      "tool_calls": [
+        {
+          "name": "read_inbox",
+          "arguments": {}
+        }
+      ],
+      "raw_message_keys": [
+        "role",
+        "content",
+        "thinking",
+        "tool_calls"
+      ]
+    },
+    "turn2": {
+      "error": "400 Client Error: Bad Request for url: http://localhost:11434/api/chat"
+    }
+  },
+  "think_off": {
+    "think": false,
+    "label": "think=OFF",
+    "turn1": {
+      "elapsed_s": 5.0,
+      "content": "",
+      "thinking_len": 0,
+      "thinking_text": "",
+      "tool_calls": [
+        {
+          "name": "read_inbox",
+          "arguments": {}
+        }
+      ],
+      "raw_message_keys": [
+        "role",
+        "content",
+        "tool_calls"
+      ]
+    },
+    "turn2": {
+      "error": "400 Client Error: Bad Request for url: http://localhost:11434/api/chat"
+    }
+  }
+}

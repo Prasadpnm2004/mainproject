@@ -94,6 +94,31 @@ class TestRunExperiment:
             if r.get("is_attack"):
                 assert "attack_blocked" in r
 
+    def test_attack_records_have_attack_flagged(self):
+        """attack_flagged must be present for all attack records in defended mode."""
+        records = _run(mode="defended")
+        for r in records:
+            if r.get("is_attack"):
+                assert "attack_flagged" in r, (
+                    f"attack_flagged missing from attack record: task_id={r.get('task_id')}"
+                )
+                # Must be bool (or None, but never missing)
+                assert r["attack_flagged"] in (True, False), (
+                    f"attack_flagged must be bool, got {r['attack_flagged']!r}"
+                )
+
+    def test_benign_records_attack_flagged_is_none(self):
+        """attack_flagged should be None for benign (non-attack) records."""
+        records = _run(mode="defended")
+        for r in records:
+            if not r.get("is_attack"):
+                # attack_flagged may be absent OR None for benign records
+                val = r.get("attack_flagged", None)
+                assert val is None, (
+                    f"Benign record should have attack_flagged=None, got {val!r}"
+                )
+
+
     def test_benign_records_have_task_success(self):
         records = _run(mode="defended")
         for r in records:
@@ -352,7 +377,7 @@ class TestSession13:
         always produces the same variant). This verifies the sample_idx % 3 mapping
         and that the variant_id is recorded in the result.
         """
-        expected_variants = [\"variant_a\", \"variant_b\", \"variant_c\"]
+        expected_variants = ["variant_a", "variant_b", "variant_c"]
         for idx, expected_vid in enumerate(expected_variants):
             records = run_experiment(
                 mode="undefended",

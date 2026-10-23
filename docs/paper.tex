@@ -1,6 +1,10 @@
 % docs/paper.tex
-% PACM v1.0.0 — Publication-Ready LaTeX Manuscript
-% Session 11: CoT trace extraction, scope-flag friction boost, real-model sweep
+% PACM v2.0.0 — LaTeX Export (FROZEN at Session 28, 2026-10-23)
+% MAINTENANCE NOTE (Session 28): This file is FROZEN.
+%   All future paper content edits go to docs/paper_draft.md (the authoritative source).
+%   Regenerate paper.tex from paper_draft.md when a LaTeX submission is required.
+%   See PACM_Final_Direction.md §7 for the full decision rationale.
+%   Do NOT hand-edit this file between now and the next LaTeX-export session.
 %
 % Compile with:
 %   pdflatex paper.tex
@@ -36,6 +40,7 @@
 \usepackage{subcaption}
 \usepackage{natbib}
 \usepackage{times}
+\usepackage[normalem]{ulem}   % \sout{} for struck-out completed items
 
 % ── Hyperref configuration ────────────────────────────────────────────────────
 \hypersetup{
@@ -78,9 +83,9 @@
 
 % ── Title & author ────────────────────────────────────────────────────────────
 \title{%
-  \textbf{Plan--Action Consistency Monitoring (\pacm{}):\\
-  A Lightweight Runtime Defense Against Context-Aware\\
-  Prompt Injection in Tool-Using LLM Agents}%
+  \textbf{Plan--Action Consistency Monitoring (\pacm{}): Failure Modes\\
+  in Reasoning-Aware Prompt Injection Defenses\\
+  for Tool-Using LLM Agents}%
 }
 
 \author{%
@@ -88,7 +93,7 @@
   \small{\texttt{pacm-research@example.com}}
 }
 
-\date{August 2026 \quad --- \quad v1.0.0 (arXiv preprint)}
+\date{October 2026 \quad --- \quad v2.0.0 (arXiv preprint)}
 
 % ── Document ──────────────────────────────────────────────────────────────────
 \begin{document}
@@ -98,34 +103,40 @@
 % ─────────────────────────────────────────────────────────────────────────────
 \begin{abstract}
 Large language model (LLM) agents that invoke external tools via the Model
-Context Protocol (\mcp{}) are increasingly vulnerable to \emph{context-aware
-prompt injection}, where adversarial content embedded in tool outputs hijacks
-the agent's subsequent actions. We present \textbf{Plan--Action Consistency
-Monitoring (\pacm{})}, a lightweight, protocol-agnostic runtime defense that
-intercepts tool calls before execution and measures the \emph{divergence}
-between the agent's declared reasoning intent and the proposed action
-parameters. \pacm{} combines an embedding-based semantic scorer (TF-IDF or
-\texttt{sentence-transformers}/all-MiniLM-L6-v2) with rule-based argument
-scope checks and \mcp{} tool trust scores into a \textbf{trust-weighted
-friction policy} $F_{\text{boosted}} = D \times (1.5 - 0.5T) + \Delta_{\text{scope}}$
-that issues \textsc{Allow}/\textsc{Flag}/\textsc{Block} decisions at runtime,
-without requiring LLM calls or ground-truth labels at inference time.
-Evaluated on a 16-configuration benchmark across two agent harnesses
-(LangGraph and a framework-free custom loop), two attack types, and three
-policy tiers, \pacm{} achieves up to \textbf{54\% Attack Block Rate (ABR)}
-with \textbf{0\% False Positive Rate (FPR)} on synthetic adversarial traces.
-Alpha sensitivity analysis identifies $\alpha = 0.9$ as the optimal semantic
-weight (separation = 0.479). Adaptive attacker stress tests (RQ5) reveal
-consistent \textsc{Flag} escalation even for fully adaptive adversaries,
-preserving a human oversight channel. Ablations confirm that trust modulation
-and the sentence-transformers backend each contribute meaningfully to
-detection. Real-model evaluation with \texttt{qwen3:8b} (Ollama) confirms
-multi-source CoT extraction and scope-flag friction boosting ($\Delta = +0.15$)
-are essential for exfiltration detection under open-weight models. \pacm{} is
-implemented as a modular pre-tool hook requiring zero changes to agent harness
-internals, ships with \textbf{309 passing unit tests}, and is fully
-reproducible with a single command. Code, data, and reproduction scripts are
-released at this repository.
+Context Protocol (\mcp{}) are vulnerable to \emph{context-aware prompt
+injection}, where adversarial content embedded in tool outputs hijacks the
+agent's subsequent actions. We present \textbf{Plan--Action Consistency
+Monitoring (\pacm{})}, a runtime defense that intercepts tool calls before
+execution and measures the \emph{divergence} between the agent's declared
+chain-of-thought reasoning and the proposed action parameters via a
+trust-weighted friction policy that issues \textsc{Allow}/\textsc{Flag}/\textsc{Block}
+decisions without requiring LLM calls at inference time.
+
+During real-model evaluation with \texttt{qwen3:8b} (Ollama, $n=10$ per
+condition), we discover and characterize a previously undocumented integration
+failure: \textbf{Silent CoT Collapse (SCC)}, in which the standard LangChain
++ OpenAI-compat-endpoint + local-reasoning-model integration silently discards
+chain-of-thought content, causing the divergence scorer to operate on an empty
+reasoning string. The consequence is near-deterministic, zero-discriminative
+divergence scores ($D = 0.1546 \pm 0.001$ in $9/10$ runs).
+
+A three-way controlled ablation (scope-only vs.\ scope+reasoning vs.\ na\"ive
+keyword baseline, $n=10$ per condition) reveals two novel failure modes. The
+\textbf{Overthinking Trap} triggers false positives precisely when the model
+correctly identifies and narrates rejection of an injected instruction ---
+contaminating the reasoning trace with attack vocabulary that the semantic
+scorer reads as divergence ($D = 0.560$ in 4 independent observations;
+$2/10$ runs, Wilson 95\% CI $[5.7\%, 51.0\%]$). \textbf{Anticipatory False
+Positives (AFP)} occur when keyword detectors fire on the model's
+\emph{pre-injection} defensive deliberation before the model has seen any
+malicious content ($3/10$ runs, CI $[10.8\%, 60.4\%]$).
+
+A Fisher's exact test comparing scope-only and scope+reasoning false-positive
+rates yields $p = 0.4737$ --- inconclusive at $n=10$; approximately
+$n=38$/condition is required for 80\% power. Traditional Attack Block Rate
+was unmeasurable (model resisted injection in all 30/30 runs). \pacm{} is
+implemented as a modular pre-tool hook with 454 passing unit tests and a
+one-command reproducibility pipeline.
 \end{abstract}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -161,28 +172,37 @@ manifest precisely as divergences between these two signals.
 
 \paragraph{Contributions.}
 \begin{enumerate}[leftmargin=*]
-  \item \textbf{Divergence formalization:} We formalize the plan-action
-    divergence problem and show that injection attacks reliably manifest as
-    measurable divergences in both semantic embedding space and argument
-    scope space (Section~\ref{sec:scoring}).
+  \item \textbf{Silent CoT Collapse (SCC):} We identify and quantitatively
+    characterize a previously undocumented failure in the LangChain +
+    OpenAI-compat-endpoint + local-reasoning-model integration stack:
+    chain-of-thought content generated by the model is silently absent from
+    the API response object, causing the divergence scorer to operate on an
+    empty reasoning string. $D = 0.1546 \pm 0.001$ in 9/10 runs confirms
+    zero discriminative power (Section~\ref{sec:scc}).
 
-  \item \textbf{DivergenceScorer:} A dual-signal scorer combining semantic
-    embedding similarity (TF-IDF or sentence-transformers) with argument
-    scope rule checks, producing $D \in [0,1]$ with configurable weighting
-    $\alpha$ (Section~\ref{sec:scoring}).
+  \item \textbf{The Overthinking Trap:} A novel false-positive failure mode
+    in semantic divergence detectors, triggered precisely when the model
+    correctly identifies and narrates rejection of an injected instruction.
+    The rejection reasoning contaminates the divergence signal ($D = 0.560$,
+    4 independent observations across 3 sessions). The model's most
+    security-correct behavior causes the detector's worst outcome
+    (Section~\ref{sec:trap}).
 
-  \item \textbf{Trust-Weighted FrictionPolicy:} $F = \mathrm{clip}(D \times
-    (1.5 - 0.5T),\, 0,\, 1)$, mapping friction to
-    \textsc{Allow}/\textsc{Flag}/\textsc{Block} using configurable
-    thresholds and \mcp{} tool trust scores $T$ (Section~\ref{sec:policy}).
+  \item \textbf{Anticipatory False Positives (AFP):} A distinct failure mode
+    in keyword/regex detectors that fires on the model's \emph{pre-injection}
+    defensive deliberation --- before the model has seen any injected content
+    --- specifically penalising safety-conscious reasoning models
+    (Section~\ref{sec:afp}).
 
-  \item \textbf{RQ5 adaptive stress test:} We implement and evaluate five
-    adaptive attack variants against \pacm{}, characterizing the monitor's
-    own attack surface (Section~\ref{sec:adaptive}).
+  \item \textbf{Controlled ablation ($n=10$/condition):} Scope-only vs.\
+    scope+reasoning vs.\ na\"ive keyword baseline. Core RQ2 result:
+    $p = 0.4737$ (Fisher's exact, two-sided) --- inconclusive at $n=10$,
+    $\approx n=38$/condition required for 80\% power (Section~\ref{sec:ablation}).
 
-  \item \textbf{Open reproducibility:} A one-click \texttt{reproduce\_all.py}
-    script replicates all 8 experimental steps; 245 unit tests verify all
-    components (Appendix~\ref{app:repro}).
+  \item \textbf{\pacm{} system:} The underlying dual-signal
+    \texttt{DivergenceScorer} and trust-weighted \texttt{FrictionPolicy},
+    evaluated on a 16-configuration synthetic benchmark with adaptive
+    attacker stress test (RQ5) and ablation study (Sections~\ref{sec:scoring}--\ref{sec:errors}).
 \end{enumerate}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -602,25 +622,84 @@ required to quantify ABR on live models.
 
 
 % ─────────────────────────────────────────────────────────────────────────────
+\subsection{Real-Model Three-Way Ablation (Sessions 19--25)}
+\label{sec:ablation}
+
+Sessions 19--25 extend the evaluation with a fully controlled three-way
+ablation ($n=10$ per condition, qwen3:8b, think=True, canonical aggressive
+policy) using Ollama's native \texttt{/api/chat} endpoint, which correctly
+surfaces chain-of-thought content. Three conditions were evaluated:
+(1)~\emph{scope-only} (ChatOpenAI compat path, reasoning discarded by SCC),
+(2)~\emph{scope+reasoning} (native API, \pacm{} semantic scorer active),
+and (3)~\emph{na\"ive keyword baseline}. The model resisted injection in
+30/30 runs, making ABR unmeasurable; all findings characterize
+false-positive burden conditional on model resistance.
+
+Tables~\ref{tab:s24_ablation}--\ref{tab:trap_obs} report the full results.
+
+\input{../experiments/paper_table.tex}
+
+\noindent\textbf{Silent CoT Collapse (\S\,\ref{sec:scc}).}
+$D = 0.1546 \pm 0.001$ in 9/10 scope-only runs confirms zero discriminative
+power when reasoning is silently discarded.
+
+\noindent\textbf{Overthinking Trap (\S\,\ref{sec:trap}).}
+\label{sec:trap}
+The scope+reasoning condition produced 2/10 false positives (Wilson 95\%
+CI $[5.7\%, 51.0\%]$), all driven by the Overthinking Trap: $D = 0.560$ on
+the blocked call, retry $D \in [0.119, 0.183]$. Observed in 4 independent
+instances across 3 sessions; magnitude consistent to 3 significant figures.
+
+\noindent\textbf{Anticipatory False Positives (\S\,\ref{sec:afp}).}
+\label{sec:afp}
+3/10 na\"ive-baseline runs had \texttt{read\_inbox} blocked before the model
+seen any injected content (AFP; Wilson 95\% CI $[10.8\%, 60.4\%]$). This
+reduced the na\"ive-baseline FPR denominator from 10 to 7. A concrete
+downstream consequence: address degradation to \texttt{boss@mercial.com}
+under retry pressure from unexplained blocks (run 7).
+
+\noindent\textbf{SCC label.}
+\label{sec:scc}
+Silent CoT Collapse (SCC) denotes the architectural failure identified
+in Session 19, quantitatively confirmed in Session 24 (see above).
+
+\noindent\textbf{RQ2 Fisher's exact test.}
+Scope-only vs.\ scope+reasoning: blocked 0/10 vs.\ 2/10. OR $= 0.00$,
+$p = 0.4737$ (two-sided). \emph{Verdict: inconclusive at $n=10$.} Approximately
+$n = 38$/condition required for 80\% power. This is an honest null result:
+neither an absence of effect nor a confirmed effect.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Discussion}
 \label{sec:discussion}
 
 \subsection{Limitations}
 
 \begin{enumerate}[leftmargin=*]
-  \item \textbf{Real-LLM scale:} The real-model evaluation (Section~\ref{sec:realmodel})
-    uses a quick sweep (2 configs, 6 tasks). A full 14-config sweep is needed for
-    publication-grade ABR/BTSR confidence intervals.
-  \item \textbf{Alpha calibration:} $\alpha = 0.9$ was identified on synthetic
-    data. Real injection traces may require different calibration.
-  \item \textbf{Trust score dependency:} \pacm{} requires accurate \mcp{} trust
-    scores. If metadata is missing, $T = 0.5$ (default) is applied.
-  \item \textbf{Adaptive attacker scope:} The five variants were constructed
-    synthetically; real adversaries may devise novel evasion strategies.
-  \item \textbf{Reasoning availability:} As documented in
-    Section~\ref{sec:reasoning_gap}, open-weight tool-calling LLMs via Ollama
-    return empty \texttt{AIMessage.content} during tool calls, requiring
-    multi-source CoT extraction. Future work should validate across more models.
+  \item \textbf{SCC scope:} Silent CoT Collapse is confirmed for
+    LangChain + OpenAI-compat-endpoint + \texttt{qwen3:8b}. Whether
+    other models or frameworks exhibit the same failure requires
+    separate verification.
+  \item \textbf{Sample size ceiling ($n=10$):} The three-way ablation
+    is underpowered. Fisher's exact yields $p=0.4737$; $\approx n=38$/condition
+    is required for 80\% power. Trap (CI $[5.7\%, 51.0\%]$) and AFP
+    (CI $[10.8\%, 60.4\%]$) intervals overlap; their relative frequencies
+    cannot be compared at $n=10$.
+  \item \textbf{ABR undefined:} Model resisted injection in all 30/30
+    runs. ABR is unmeasurable in this setup; findings characterize
+    false-positive burden conditional on model resistance.
+  \item \textbf{Trap frequency is preliminary:} Mechanism confirmed ($D=0.560$
+    in 4 instances). Frequency ($2/10$, 20\%) is preliminary.
+    Combined $n=15$ across sessions must not be reported.
+  \item \textbf{AFP is observed, not confirmed generally:} $3/10$ naive-baseline
+    runs. Generalizability requires broader evaluation.
+  \item \textbf{Alpha calibration:} $\alpha = 0.9$ on synthetic data;
+    real traces may differ.
+  \item \textbf{Trust score dependency:} Requires accurate \mcp{} trust
+    scores; $T=0.5$ default if missing.
+  \item \textbf{Adaptive attacker scope:} Five variants synthetic;
+    real adversaries may devise novel evasion.
 \end{enumerate}
 
 
@@ -697,7 +776,58 @@ Coverage is validated by 12 unit tests across both harnesses
 \texttt{TestExtractReasoningCustomLoop} in \texttt{test\_custom\_loop.py}).
 
 
-\subsection{Related Work}
+\subsection{Future Work}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{$n=40$ scope+reasoning ablation (highest priority):}
+    Extend the core RQ2 comparison to $n \approx 38$--40 per condition to
+    achieve 80\% power for Fisher's exact test at the observed proportions
+    (0\% vs.\ 20\% FPR). This is the minimum experiment needed to confirm
+    or refute the FPR comparison at a publishable confidence level.
+
+  \item \textbf{AFP mitigation:}
+    Implement a domain-allowlist pre-filter for keyword detectors: suppress
+    AFP-triggering keywords in \texttt{reasoning\_before} only when the
+    proposed target is in a known-safe domain. Evaluate whether this
+    eliminates AFP without reducing post-injection detection sensitivity.
+
+  \item \textbf{Overthinking Trap mitigation (D-capping):}
+    When \texttt{reasoning\_before} contains attack-rejection vocabulary
+    (e.g., ``phishing'', ``exfiltrate'', ``trying to trick'') and the
+    proposed target is in the known-safe domain, cap the semantic D
+    contribution at $\approx 0.20$. Retry $D$ values ($0.119$--$0.183$)
+    suggest this would allow legitimate retries while still flagging genuine
+    injections. Requires a dedicated ablation before deployment.
+
+  \item \textbf{SCC broader validation:}
+    Confirm whether SCC affects \texttt{deepseek-r1} and
+    \texttt{phi-4-reasoning} via the same OpenAI-compat stack, and whether
+    it manifests with other LangChain versions or framework-free harnesses
+    using the native Ollama endpoint.
+
+  \item \textbf{Full 16-configuration real-LLM sweep:}
+    Run the complete benchmark with diverse injection variants (not just
+    \texttt{ignore\_previous}) to produce publication-grade ABR/BTSR
+    numbers and stress-test Trap/AFP failure modes across a wider range of
+    model behaviors.
+
+  \item \textbf{LLM-backed extractor:}
+    Replace regex-based \texttt{IntentExtractor} with a gated LLM call
+    for higher precision on complex CoT traces. \texttt{strip\_cot\_tags()}
+    is a prerequisite.
+
+  \item \textbf{Online threshold calibration:}
+    Update allow/block thresholds from streaming audit data using Thompson
+    sampling or bandit methods.
+
+  \item[8.] \sout{\textbf{Local LLM backend (Ollama)}} \textit{(completed
+    --- \texttt{src/llm\_config.py}, probe CLI)}.
+
+  \item[9.] \sout{\textbf{CoT tag filtering}} \textit{(completed ---
+    \texttt{strip\_cot\_tags()}, 12 unit tests, 4 formats)}.
+\end{enumerate}
+
+
 
 \textbf{Prompt injection defenses.}
 \citet{Greshake2023NotWhatYouSignedUp} first characterized indirect prompt
@@ -733,21 +863,27 @@ score design.
 \label{sec:conclusion}
 
 \pacm{} is a practical, modular runtime defense against context-aware prompt
-injection in tool-using LLM agents. By intercepting tool calls and measuring
-plan-action divergence through a dual semantic+scope scorer combined with
-\mcp{} trust weighting, \pacm{} provides actionable escalation decisions with
-negligible latency overhead. The adaptive attacker analysis (RQ5) reveals
-that while determined adversaries can evade blocking in stub mode, they
-consistently trigger \textsc{Flag} escalation --- preserving a human
-oversight channel even in the worst case. The ablation study confirms that
-trust modulation and the sentence-transformers backend each contribute
-meaningfully to detection. Real-model evaluation with \texttt{qwen3:8b}
-(Ollama) demonstrates end-to-end integration with a live local LLM: the
-multi-source CoT extraction (Section~\ref{sec:reasoning_gap}) and scope-flag
-friction boost ($\Delta = +0.15$) are essential for exfiltration detection
-under open-weight models with reduced reasoning availability. The full
-14-configuration real-model sweep remains as future work to obtain
-publication-grade ABR confidence intervals.
+injection in tool-using LLM agents. The core plan-action divergence thesis
+--- that injection-hijacked agents produce tool calls that diverge from their
+stated reasoning --- is validated on synthetic benchmarks and confirmed as
+detectable via a dual semantic+scope scorer with negligible latency overhead.
+
+Real-model evaluation with \texttt{qwen3:8b} surfaced three significant
+findings that complicate the original thesis. \textbf{Silent CoT Collapse}
+reveals that the standard LangChain + OpenAI-compat integration stack
+silently discards reasoning content, reducing the semantic scorer to a
+no-op. The \textbf{Overthinking Trap} reveals that correct model rejection
+behavior contaminates the divergence signal, causing false positives precisely
+on security-correct runs. \textbf{Anticipatory False Positives} reveal that
+keyword detectors penalise models that deliberate carefully before tool calls.
+These three findings reframe the paper's contribution from ``a defense that
+works'' to ``a principled analysis of where and why reasoning-aware defenses
+fail in practice'' --- arguably a more durable and important contribution.
+
+The controlled ablation ($n=10$/condition) yields an inconclusive but
+directionally consistent result: $p = 0.4737$, with $n \approx 38$/condition
+needed for 80\% power. Confirming or refuting the core FPR comparison at
+adequate power is the most important next step for this research program.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \bibliographystyle{abbrvnat}

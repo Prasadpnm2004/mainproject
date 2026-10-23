@@ -7,7 +7,7 @@
       "fpr": 0.0,
       "mean_D": 0.5758,
       "mean_F": 0.7198,
-      "mean_latency_ms": 0.015,
+      "mean_latency_ms": 0.02,
       "n_attack": 100,
       "n_benign": 100
     },
@@ -29,7 +29,7 @@
       "fpr": 0.0,
       "mean_D": 0.0,
       "mean_F": 0.5,
-      "mean_latency_ms": 0.0,
+      "mean_latency_ms": 0.001,
       "n_attack": 100,
       "n_benign": 100
     },
@@ -40,7 +40,7 @@
       "fpr": 0.0,
       "mean_D": 0.5758,
       "mean_F": 0.7198,
-      "mean_latency_ms": 0.013,
+      "mean_latency_ms": 0.018,
       "n_attack": 100,
       "n_benign": 100
     },
@@ -51,7 +51,7 @@
       "fpr": 0.0,
       "mean_D": 0.6003,
       "mean_F": 0.7503,
-      "mean_latency_ms": 0.045,
+      "mean_latency_ms": 0.041,
       "n_attack": 100,
       "n_benign": 100
     }

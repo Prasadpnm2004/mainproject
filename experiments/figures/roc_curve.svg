@@ -12,12 +12,20 @@
   <line x1="450.0" y1="30.0" x2="450.0" y2="340.0" stroke="#f1f5f9" stroke-width="0.8"/>
   <line x1="70.0" y1="30.0" x2="450.0" y2="30.0" stroke="#f1f5f9" stroke-width="0.8"/>
   <line x1="70.0" y1="340.0" x2="450.0" y2="30.0" stroke="#d1d5db" stroke-width="1.0" stroke-dasharray="5,4"/>
-  <path d="M 70.0 340.0 L 70.0 340.0" fill="none" stroke="#2563eb" stroke-width="2.0"/>
-  <circle cx="70.0" cy="340.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
-  <circle cx="70.0" cy="340.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
-  <circle cx="70.0" cy="340.0" r="9" fill="#dc2626" stroke="#991b1b" stroke-width="2"/>
-  <text x="84.0" y="332.0" font-size="9" text-anchor="start" fill="#dc2626">Optimal
-(0%, 0%)</text>
+  <path d="M 70.0 54.8 L 85.2 42.4 L 92.8 36.2 L 115.6 30.0 L 146.0 30.0 L 168.8 30.0 L 176.4 30.0 L 237.2 30.0 L 282.8 30.0 L 328.4 30.0" fill="none" stroke="#2563eb" stroke-width="2.0"/>
+  <circle cx="70.0" cy="54.8" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="85.2" cy="42.4" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="92.8" cy="36.2" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="115.6" cy="30.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="146.0" cy="30.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="168.8" cy="30.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="176.4" cy="30.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="237.2" cy="30.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="282.8" cy="30.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="328.4" cy="30.0" r="5" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5"/>
+  <circle cx="92.8" cy="36.2" r="9" fill="#dc2626" stroke="#991b1b" stroke-width="2"/>
+  <text x="106.8" y="28.2" font-size="9" text-anchor="start" fill="#dc2626">Optimal
+(98%, 6%)</text>
   <line x1="70.0" y1="340.0" x2="450.0" y2="340.0" stroke="#374151" stroke-width="1.5"/>
   <line x1="70.0" y1="340.0" x2="70.0" y2="30.0" stroke="#374151" stroke-width="1.5"/>
   <line x1="70.0" y1="340.0" x2="70.0" y2="345.0" stroke="#374151" stroke-width="1.0"/>

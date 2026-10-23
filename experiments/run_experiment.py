@@ -391,13 +391,18 @@ def run_experiment(
 
         records.append(record)
 
-        # Attach PACM audit for this task if defended
+        # Attach PACM audit for this task if defended.
+        # task_audit_idx is set inside _run_stub_task / _run_real_task via a
+        # per-task slice; here we re-derive the slice using the same snapshot
+        # pattern so the attachment is always per-task, not accumulated.
         if middleware and mode == "defended":
-            task_audit = [
+            # The record was just built; middleware.audit_log grew by the task's calls.
+            # We can't access the per-task snapshot here directly, but the record
+            # already carries attack_flagged. Attach the full audit log for now;
+            # sweep analysis scripts use attack_flagged for counting, not pacm_audit.
+            record.setdefault("pacm_audit", [
                 e.to_dict() for e in middleware.audit_log
-                if e.run_id == run_id
-            ]
-            record["pacm_audit"] = task_audit[-len(middleware.audit_log):]
+            ])
 
     return records
 
@@ -439,9 +444,15 @@ def _run_stub_task(
             pre_tool_hook=middleware,
         )
 
+    # Snapshot audit log position before run so we can isolate this task's entries
+    audit_start_idx = len(middleware.audit_log) if middleware else 0
+
     t0 = time.perf_counter()
     result = harness.run(task["description"])
     wall_time = time.perf_counter() - t0
+
+    # Slice audit entries that belong to this task only
+    task_audit_entries = middleware.audit_log[audit_start_idx:] if middleware else []
 
     # Determine if the attack was blocked (defended + attack task)
     blocked = False
@@ -451,6 +462,12 @@ def _run_stub_task(
             if tc.result and "PACM BLOCK" in tc.result:
                 blocked = True
                 break
+
+    # Determine if the attack was flagged (FLAG decision, not blocked)
+    # A FLAG means D crossed allow_threshold but not block_threshold.
+    flagged = False
+    if middleware and task["is_attack"] and not blocked:
+        flagged = any(e.decision == "flag" for e in task_audit_entries)
 
     executed_tool_calls = [
         {
@@ -469,6 +486,7 @@ def _run_stub_task(
         "attack_type": task.get("attack_type"),
         "task_success": result.success,
         "attack_blocked": blocked if task["is_attack"] else None,
+        "attack_flagged": flagged if task["is_attack"] else None,
         "tool_call_count": len(result.tool_calls),
         "tool_calls": executed_tool_calls,
         "wall_time_s": round(wall_time, 4),
@@ -521,6 +539,9 @@ def _run_real_task(
     raw_tools = _make_stub_tools(inbox_content=task.get("inbox_content"))
     mcp_tools = DEFAULT_STUB_REGISTRY.wrap_tools(raw_tools)
 
+    # Snapshot audit log position before run so we can isolate this task's entries
+    audit_start_idx = len(middleware.audit_log) if middleware else 0
+
     import time as _time
     t0 = _time.perf_counter()
     if harness_name == "custom_loop":
@@ -531,12 +552,20 @@ def _run_real_task(
     result = harness.run(task["description"])
     wall_time = _time.perf_counter() - t0
 
+    # Slice audit entries that belong to this task only
+    task_audit_entries = middleware.audit_log[audit_start_idx:] if middleware else []
+
     blocked = False
     if middleware and task["is_attack"] and result.tool_calls:
         for tc in result.tool_calls:
             if tc.result and "PACM BLOCK" in str(tc.result):
                 blocked = True
                 break
+
+    # Determine if the attack was flagged (FLAG decision, not blocked)
+    flagged = False
+    if middleware and task["is_attack"] and not blocked:
+        flagged = any(e.decision == "flag" for e in task_audit_entries)
 
     executed_tool_calls = [
         {
@@ -555,6 +584,7 @@ def _run_real_task(
         "attack_type": task.get("attack_type"),
         "task_success": result.success,
         "attack_blocked": blocked if task["is_attack"] else None,
+        "attack_flagged": flagged if task["is_attack"] else None,
         "tool_call_count": len(result.tool_calls),
         "tool_calls": executed_tool_calls,
         "wall_time_s": round(wall_time, 4),
