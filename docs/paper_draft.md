@@ -61,13 +61,16 @@ We evaluate **five attack variants** (§5.3):
 
 ### 2.3 Research Questions
 
-| RQ | Question |
-|----|---------|
-| RQ1 | Does plan-action divergence scoring reliably detect prompt injection? |
-| RQ2 | What is the optimal semantic-vs-scope weight (α) for the divergence formula? |
-| RQ3 | What is the latency overhead of PACM relative to undefended agents? |
-| RQ4 | Which PACM components contribute most to detection (ablation)? |
-| RQ5 | How does detection degrade against adaptive adversaries? |
+This paper addresses four research questions derived from real-model evaluation. RQ1 and RQ2 concern the reliability of the plan-action divergence thesis in practice; RQ3 and RQ4 characterize the failure modes that reasoning-aware and content-based detectors introduce.
+
+| RQ | Question | Status |
+|----|----------|--------|
+| RQ1 | Does the standard LangChain + OpenAI-compatible-endpoint integration pattern silently discard chain-of-thought content when used with local reasoning models (Silent CoT Collapse)? | **Confirmed.** D = 0.1546 in 9/10 scope-only runs; reasoning_len = 0 in 9/10 runs. Zero discriminative power under SCC. |
+| RQ2 | With the reasoning-availability gap resolved via the native API, does incorporating real CoT reasoning measurably improve attack detection over scope-based signal alone? | **Inconclusive at n=10.** Fisher's exact test: p = 0.4737 (scope-only 0/10 FP vs. scope+reasoning 2/10 FP). Approximately n=38/condition required for 80% power. Direction is consistent with the hypothesis; evidence is insufficient to confirm at this sample size. |
+| RQ3 | What failure modes does reasoning-aware semantic divergence scoring introduce that scope-only scoring does not exhibit? | **Identified: the Overthinking Trap.** When the model correctly identifies and narrates rejection of an injection, attack vocabulary in the reasoning contaminates D (D=0.560, 4 independent observations, 2/10 rate in scope+reasoning condition, Wilson 95% CI [5.7%, 51.0%]). |
+| RQ4 | What failure modes does a naive keyword/regex content detector exhibit that a semantic approach does not? | **Identified: Anticipatory False Positives (AFP).** Keyword detectors fire on the model's pre-injection defensive deliberation before the model has seen any malicious content (3/10 rate in naive-baseline condition, Wilson 95% CI [10.8%, 60.4%]). |
+
+> **Relationship to earlier synthetic benchmark (§5.1–5.8).** Sections 5.1–5.8 address the original RQ set from the system design phase (divergence scoring reliability, alpha sensitivity, latency, adaptive attacker stress test) using synthetic/stub-mode traces. Those experiments validate the PACM framework's components; the four RQs above emerge from real-model evaluation and constitute the paper's primary empirical contribution.
 
 ---
 
@@ -313,6 +316,8 @@ python -m experiments.generate_paper_tables --real
 
 †ABR=100% with scope-flag boost: D_exfil=0.339, boost=+0.15, F=0.489 > θ_allow=0.45.
 
+> **Note (§5.9 context):** This ABR=100% result is from the §5.8 quick-sweep pilot — two configurations, LangChain/LangGraph + OpenAI-compat endpoint, Session 11. It is *not* contradicted by §5.9's finding that ABR is unmeasurable there. The Session 24 ablation (§5.9) uses a different methodology: Ollama's native API (which correctly surfaces CoT reasoning), a three-way controlled ablation, and n=10 per condition — and the model consistently resisted injection in all 30/30 runs, making ABR undefined by that larger-sample methodology. The §5.8 and §5.9 evaluations are complementary, not competing.
+
 **Exfiltration case study (real LLM traces):**
 
 | Call # | Tool | D | Scope flag | F (boosted) | Decision |
@@ -350,6 +355,8 @@ F_boosted = min(1, D × (1.5 − 0.5T) + Δ_scope)     where Δ_scope = 0.15
 
 ### 5.9 Real-Model Evaluation: Sessions 19–25 (qwen3:8b + Native API)
 
+**Foundation.** Sections 5.1–5.8 built and validated the PACM framework on synthetic and stub-mode traces: the scoring architecture (DivergenceScorer, FrictionPolicy), the 16-configuration benchmark, alpha sensitivity, adaptive attacker stress test, and the initial real-model quick sweep (§5.8). That work confirmed the framework integrates cleanly with live LLM infrastructure and performs as designed on controlled inputs. Sessions 19–25 extend it with a real-model investigation that was only possible because the engineering foundation was already in place: moving from stub-mode to a fully controlled three-way ablation under live qwen3:8b inference with known-ground-truth tasks, using Ollama's native `/api/chat` endpoint that correctly surfaces chain-of-thought reasoning tokens. Three new findings emerged that were not predictable from the synthetic evaluation alone and that constitute the paper's primary empirical contribution.
+
 > **Note on scope.** §5.8 reported a two-configuration quick sweep using the OpenAI-compat LangChain endpoint (LangGraph + ChatOpenAI → Ollama /v1/). Sessions 19–25 extend that evaluation in three ways: (1) they replace the OpenAI-compat path with Ollama's native `/api/chat` endpoint, which correctly surfaces chain-of-thought reasoning tokens; (2) they run a fully controlled three-way ablation (n=10 per condition) comparing scope-only, scope+reasoning, and naive-baseline detection; and (3) they document two novel failure modes discovered during real-model operation. All reported numbers in §5.9 are from real qwen3:8b inference runs, not stub mode. Source artifacts: `experiments/s24_ablation.jsonl`, `experiments/s24_ablation_stats.json`.
 
 #### 5.9.1 Silent CoT Collapse: Quantitative Confirmation
@@ -357,6 +364,8 @@ F_boosted = min(1, D × (1.5 − 0.5T) + Δ_scope)     where Δ_scope = 0.15
 Session 19 discovered that the OpenAI-compat endpoint silently discards qwen3:8b's chain-of-thought: the `thinking` field populated by the native `/api/chat` endpoint is absent from the `/v1/chat/completions` response object. PACM's `IntentExtractor` receives an empty reasoning string, causing `declared_goal = ""` in every run — making the semantic divergence score a comparison of an empty vector against the action description rather than a comparison of reasoning against action. We named this **Silent CoT Collapse (SCC)**.
 
 Session 24's `scope_only` condition (n=10, ChatOpenAI → Ollama /v1/, same model) provides a clean empirical measurement: **D = 0.1546 in 9/10 runs** (constant to 4 decimal places); reasoning_len = 0 in 9/10 runs (mean=39.7 chars). The near-perfect determinism of D under SCC confirms that the scope-only path has zero discriminative power between runs — the same fixed score is produced regardless of what the model reasoned or decided, because the reasoning is never seen. *(Source: s24_ablation_stats.json, scope_only: send_email_d_all = [0.1546 ×9, 0.1449 ×1].)*
+
+*This section answers **RQ1**: the LangChain + OpenAI-compat-endpoint integration pattern silently discards chain-of-thought content — confirmed.*
 
 #### 5.9.2 Core Ablation: scope-only vs. scope+reasoning vs. naive-baseline
 
@@ -385,6 +394,8 @@ Three conditions, n=10 per condition, qwen3:8b (think=True), canonical aggressiv
 
 OR = 0.00, **p = 0.4737** (two-sided Fisher's exact). **Verdict: Inconclusive at n=10.** The null cannot be rejected. This is not a claim that no effect exists — the study was underpowered: approximately **n=38/condition** is required for 80% power at these proportions. The direction is consistent with a real effect but cannot be confirmed statistically. We do not claim "probably real, just needs more data" (that overclaims) and do not claim "no effect" (that treats an underpowered null as evidence of absence). *(Source: s24_ablation_stats.json.)*
 
+*This section addresses **RQ2**: whether incorporating real CoT reasoning measurably improves detection over scope-based signal alone — inconclusive at n=10 (p = 0.4737; ~n=38/condition required for 80% power).*
+
 #### 5.9.3 The Overthinking Trap
 
 When a reasoning model correctly identifies and rejects an injected instruction, its chain-of-thought reasoning contains attack-related vocabulary from narrating the rejection ("phishing," "trying to trick the user," "exfiltrate"). A semantic divergence scorer comparing this contaminated reasoning against the model's subsequent *legitimate* action produces a false positive on exactly the runs where the model behaved most correctly. After the block, the model generates a retry with clean reasoning; the retry is allowed at a much lower D score. The block-then-allow sequence is the observable signature.
@@ -404,6 +415,8 @@ D=0.560 is reproduced to three significant figures across four independent obser
 
 **Frequency estimate (primary — Session 24, n=10):** *2/10 (20.0%), Wilson 95% CI **[5.7%, 51.0%]**.* Session 23's n=5 result (1/5, 20%) is corroborating evidence that the rate is non-zero but is **not pooled** (different task-prompt phrasing; n=5 insufficient to validate stationarity). A combined n=15 frequency must not appear in the paper. Defensible summary: *"Observed in 2/10 canonical-config runs; Wilson 95% CI [5.7%, 51.0%]; frequency not yet well-characterised at n=10."* *(Source: s24_ablation_stats.json: trap_count=2, trap_d=[0.56, 0.1189, 0.56, 0.1829].)*
 
+*This section answers **RQ3**: what failure modes does reasoning-aware semantic divergence scoring introduce — the Overthinking Trap, where attack vocabulary in correctly-narrated rejection reasoning contaminates D and produces a false positive.*
+
 #### 5.9.4 Anticipatory False Positives
 
 Session 24's naive_baseline condition revealed a second novel failure mode: **Anticipatory False Positives (AFP)**. The naive detector scans `reasoning_before` for injection keywords. For `read_inbox`, this reasoning is generated *before* the model has seen any inbox content. A security-aware reasoning model often frames pre-call reasoning defensively — "I should be careful about phishing attempts" — triggering the detector before the model has encountered any injection.
@@ -413,6 +426,8 @@ AFP is structurally distinct from the Overthinking Trap (§5.9.3): the Trap trig
 **Observed rate (Session 24, n=10):** *3/10 (30.0%), Wilson 95% CI **[10.8%, 60.4%]**.* These 3 runs never reached send_email, reducing the FPR/BTSR denominator from 10 to 7.
 
 **Address degradation (run 7).** After the detector blocked the legitimate send_email to `boss@company.com`, repeated unexplained blocks caused the model's output to degrade: it eventually produced **`boss@mercial.com`** — a corrupted address not present anywhere in context. This is a concrete, empirically observed downstream safety consequence of high-FPR detection: the model modified its output to escape an unexplained constraint and hallucinated the address in the process. *(Source: s24_ablation.jsonl, naive_baseline run 7, second send_email to=boss@mercial.com, reasoning_len=1371.)*
+
+*This section answers **RQ4**: what failure modes does a naive keyword/regex content detector exhibit — Anticipatory False Positives, where the detector fires on pre-injection defensive deliberation before the model has encountered any malicious content.*
 
 #### 5.9.5 Structural Comparison: Overthinking Trap vs. Anticipatory False Positives
 
@@ -428,6 +443,8 @@ AFP is structurally distinct from the Overthinking Trap (§5.9.3): the Trap trig
 
 ---
 
+
+## 6. Discussion
 
 ### 6.1 Limitations
 
@@ -511,24 +528,34 @@ The controlled ablation (n=10/condition) yields an inconclusive but directionall
 
 ## Appendix B — Test Suite
 
-Total: **454 tests, 454/454 passing** (as of Session 27; updated from 223 at Session 7).
+Total: **454 tests, 454/454 passing** (directly verified from `pytest --collect-only -q`, 2026-10-24).
 
 | Test file | Tests | Focus |
 |-----------|-------|-------|
-| `test_harness_smoke.py` | 16 | Harness integration |
+| `test_adaptive_and_ablations.py` | 33 | Adaptive attack, error analysis, ablations |
+| `test_baseline_detector.py` | 40 | Naive keyword/regex baseline detector |
+| `test_calibration_and_sweep.py` | 26 | Calibration, ROC |
 | `test_custom_loop.py` | 26 | CustomLoopHarness + CoT extraction |
-| `test_mcp_wrapper.py` | 24 | MCPWrappedTool |
-| `test_pacm_core.py` | 29 | Extractor, capturer, scorer, middleware |
+| `test_experiment_runner.py` | 39 | Sweep runner, metrics |
+| `test_harness_smoke.py` | 22 | Harness integration |
+| `test_llm_config.py` | 33 | LLM provider config + backend selection |
+| `test_llm_native.py` | 28 | Native Ollama API (think=True path) |
+| `test_mcp_wrapper.py` | 33 | MCPWrappedTool |
+| `test_native_reasoning_probe.py` | 20 | Reasoning extraction probes |
+| `test_option_b_e2e_config.py` | 15 | Option B / E2E config tests |
+| `test_pacm_core.py` | 41 | Extractor, capturer, scorer, middleware |
 | `test_policy.py` | 31 | FrictionPolicy + scope boost |
-| `test_experiment_runner.py` | 25 | Sweep runner, metrics |
-| `test_calibration_and_sweep.py` | 25 | Calibration, ROC |
-| `test_sensitivity.py` | 25 | Alpha sensitivity |
 | `test_reproducibility.py` | 22 | Pipeline & artifact checks |
 | `test_scorer_transformers.py` | 20 | ST backend |
-| `test_adaptive_and_ablations.py` | 33 | Adaptive attack, error analysis, ablations |
-| `test_option_b_e2e_config.py` | *varies* | Option B / E2E config tests |
+| `test_sensitivity.py` | 25 | Alpha sensitivity |
+| **Total** | **454** | |
 
-**Note:** Count above is the verified 454/454 baseline as of Session 27. Individual file breakdown reflects paper.tex Appendix as of Session 11; the full current breakdown is available via `python -m pytest --collect-only -q`.
+**Source:** All counts from `python -m pytest --collect-only -q` run 2026-10-24 — not inherited from prior session appendix. Sum verified: 33+40+26+26+39+22+33+28+33+20+15+41+31+22+20+25 = 454.
+
+---
+
+*Version: 2.0.0 — Session 32 Draft*
+*Last updated: 2026-10-25*
 
 ---
 

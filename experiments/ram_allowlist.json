@@ -1,0 +1,21 @@
+{
+  "_comment": "RAM allowlist for PACM ram_manager.py. Edit this file to add/remove safe-to-kill processes.",
+  "_note": "Process names are case-insensitive on Windows. Use the name as it appears in Task Manager (without .exe).",
+  "_note2": "HARD DENYLIST in ram_manager.py always overrides this list — adding explorer or python here has no effect.",
+  "allowlist": [
+    "chrome",
+    "msedge",
+    "firefox",
+    "pyrefly",
+    "WhatsApp.Root",
+    "XboxPcApp",
+    "OmenCommandCenterBackground",
+    "Spotify",
+    "Discord",
+    "Teams",
+    "slack",
+    "zoom",
+    "obs64",
+    "obs32"
+  ]
+}

@@ -17,8 +17,11 @@ Guardrails: does NOT modify harness files, does NOT run a sweep.
 """
 from __future__ import annotations
 
+import argparse
+import io
 import json
 import os
+from pathlib import Path
 import sys
 import time
 
@@ -27,7 +30,32 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+# ─── UTF-8 stdout reconfiguration (avoids cp1252 garbling through Tee-Object) ─
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+elif sys.platform == "win32":
+    try:
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+        )
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True
+        )
+    except Exception:
+        pass
+
+# ─── Unicode fallback (set by --no-unicode flag before first print) ───────────
+_USE_UNICODE = True
+
+
+def _ch(uc: str, asc: str) -> str:
+    """Return uc if unicode enabled, else ASCII fallback asc."""
+    return uc if _USE_UNICODE else asc
+
 
 import requests
 from langchain_core.tools import tool as lc_tool
@@ -201,8 +229,11 @@ def run_e2e_test() -> dict:
     # ── PACM audit ────────────────────────────────────────────────────────────
     flagged = False
     pacm_entries = []
+    # Build a call_id -> ToolCallRecord lookup for cross-referencing
+    tc_by_call_id = {tc.call_id: tc for tc in result.tool_calls}
     for entry in middleware.audit_log:
         pacm_entries.append({
+            "call_id": entry.call_id,
             "tool": entry.tool_name,
             "D": round(entry.divergence_score, 3),
             "F": round(entry.friction_score, 3),
@@ -212,29 +243,45 @@ def run_e2e_test() -> dict:
             flagged = True
 
     # ── Report ────────────────────────────────────────────────────────────────
-    print("\n" + "─" * 65)
+    print("\n" + _ch("─", "-") * 65)
     print("RESULT: declared_goal (reasoning_before for send_email turn):")
-    print("─" * 65)
+    print(_ch("─", "-") * 65)
     if declared_goal:
         print(declared_goal)
     else:
         print("(EMPTY — reasoning capture still failing)")
 
-    print("\n" + "─" * 65)
+    print("\n" + _ch("─", "-") * 65)
     print(f"action_tool:   {action_tool}")
     print(f"action_args:   {json.dumps(action_args, indent=2, default=str)}")
     print(f"reasoning_len: {len(declared_goal)} chars")
     print(f"elapsed:       {elapsed:.1f}s")
     print(f"flagged:       {flagged}")
-    print("─" * 65)
+    print(_ch("─", "-") * 65)
 
-    print("\nPACM audit entries:")
+    print("\nPACM audit entries (with call_id for cross-referencing):")
+    print(f"  {'call_id':<36}  {'tool':<12}  {'D':>6}  {'F':>6}  {'decision':<8}")
+    print(f"  {'-'*36}  {'-'*12}  {'-'*6}  {'-'*6}  {'-'*8}")
     for e in pacm_entries:
-        print(f"  {e}")
+        print(f"  {e['call_id']:<36}  {e['tool']:<12}  {e['D']:>6.3f}  {e['F']:>6.3f}  {e['decision']:<8}")
 
-    print("\nAll tool call records:")
-    for tc in result.tool_calls:
-        print(f"  [{tc.tool_name}]  reasoning_len={len(tc.reasoning_before)}  args={tc.tool_args}")
+    print("\nAll tool call records (with call_id and reasoning snippet):")
+    print(f"  {'idx':<3}  {'call_id':<36}  {'tool':<12}  {'rlen':>5}  reasoning_before[:120]")
+    print(f"  {'-'*3}  {'-'*36}  {'-'*12}  {'-'*5}  {'-'*50}")
+    for idx, tc in enumerate(result.tool_calls):
+        snippet = tc.reasoning_before.replace('\n', ' ')[:120]
+        print(f"  {idx:<3}  {tc.call_id:<36}  {tc.tool_name:<12}  {len(tc.reasoning_before):>5}  {snippet}")
+
+    # Cross-reference: for each audit entry, show the matching reasoning text
+    print("\nCross-reference: audit entry -> reasoning_before (full match by call_id):")
+    for e in pacm_entries:
+        cid = e['call_id']
+        tc = tc_by_call_id.get(cid)
+        reasoning_snippet = tc.reasoning_before.replace('\n', ' ')[:200] if tc else "(no matching record)"
+        rlen = len(tc.reasoning_before) if tc else 0
+        print(f"  [{cid}] {e['tool']} D={e['D']} decision={e['decision']}")
+        print(f"    reasoning_len={rlen}  snippet: {reasoning_snippet}")
+        print()
 
     return {
         "declared_goal": declared_goal,
@@ -249,6 +296,19 @@ def run_e2e_test() -> dict:
 
 
 if __name__ == "__main__":
+    parser_main = argparse.ArgumentParser(description="Session 21 — Option B End-to-End Integration Test")
+    parser_main.add_argument("--auto-free-ram", action="store_true",
+                             help="Kill allowlisted processes if RAM < --ram-target GB. Opt-in only.")
+    parser_main.add_argument("--non-interactive", action="store_true",
+                             help="With --auto-free-ram: skip confirmation prompt.")
+    parser_main.add_argument("--ram-target", type=float, default=3.5,
+                             help="RAM target in GB for --auto-free-ram (default: 3.5).")
+    parser_main.add_argument("--no-unicode", action="store_true",
+                             help="Use ASCII-only output (safe for PowerShell Tee-Object pipes).")
+    _cli_args = parser_main.parse_args()
+    if _cli_args.no_unicode:
+        _USE_UNICODE = False
+
     print("Session 21 — Option B End-to-End Integration Test")
 
     if not check_ollama():
@@ -256,13 +316,27 @@ if __name__ == "__main__":
         sys.exit(1)
 
     free = check_ram()
-    if free < 3.5:
-        print(f"ERROR: Only {free:.2f} GB free — insufficient. Close Chrome and retry.")
-        sys.exit(1)
+    if free < _cli_args.ram_target:
+        if _cli_args.auto_free_ram:
+            print(f"RAM below {_cli_args.ram_target:.1f} GB target — attempting to free via ram_manager...")
+            _repo_root = Path(__file__).resolve().parent.parent
+            sys.path.insert(0, str(_repo_root))
+            from experiments.ram_manager import free_ram as _free_ram
+            _ok = _free_ram(
+                target_gb=_cli_args.ram_target,
+                interactive=not _cli_args.non_interactive,
+            )
+            if not _ok:
+                print(f"ERROR: Could not reach {_cli_args.ram_target:.1f} GB RAM. Close apps and retry.")
+                sys.exit(1)
+        else:
+            print(f"ERROR: Only {free:.2f} GB free — insufficient. Close Chrome and retry.")
+            print("Tip: run with --auto-free-ram to automatically free RAM.")
+            sys.exit(1)
 
     out = run_e2e_test()
 
-    print("\n" + "=" * 65)
+    print("\n" + _ch("=", "=") * 65)
     print("VERDICT:")
     print(f"  Reasoning captured: {'YES' if out['reasoning_len'] > 50 else 'NO'}")
     print(f"  Action identified:  {'YES' if out['action_tool'] else 'NO'}")
@@ -271,4 +345,4 @@ if __name__ == "__main__":
     if out['reasoning_len'] > 0:
         print(f"\nFirst 200 chars of declared_goal:")
         print(f"  {out['declared_goal'][:200]!r}")
-    print("=" * 65)
+    print(_ch("=", "=") * 65)

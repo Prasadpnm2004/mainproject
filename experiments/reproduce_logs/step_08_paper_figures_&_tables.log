@@ -6,11 +6,11 @@
   ROC SVG (calibration)  -> D:\mainproject\experiments\figures\roc_curve.svg
 
 --- ABR vs. FPR Pareto Frontier ---
-  ABR^  PACM ROC Frontier (10 points)
-  100%|    O  *    *  * *        *      *      *                   
-      |  *                                                         
-      |*                                                           
+  ABR^  PACM ROC Frontier (4 points)
+  100%|                                                            
       |                                                            
+      |                                                       *    
+      |                                               *            
       |                                                            
   74%|                                                            
       |                                                            
@@ -21,16 +21,16 @@
       |                                                            
       |                                                            
       |                                                            
-      |                                                            
+      |O                                                           
   21%|                                                            
       |                                                            
-      |                                                            
+      |*                                                           
       |                                                            
       |                                                            
       +------------------------------------------------------------
             0%         20%         41%         61%         81%       > FPR
 
-  O = Optimal (ABR=98%, FPR=6%)
+  O = Optimal (ABR=29%, FPR=0%)
   Latency SVG            -> D:\mainproject\experiments\figures\latency_comparison.svg
 
 --- Latency Overhead Comparison ---

@@ -376,4 +376,83 @@ If you use PACM in your research, please cite:
 
 MIT License — see [LICENSE](LICENSE) for details.
 
-*PACM v1.0.0 — Session 12 Release — September 2026*
+---
+
+## RAM Manager (Safe Pre-Run RAM Freeing)
+
+Before long real-model runs (qwen3:8b requires ~5–6 GB free), you may need
+to free RAM by closing background applications. `experiments/ram_manager.py`
+automates this safely.
+
+### Safety Design
+
+Two-layer protection prevents destructive kills:
+
+1. **Allowlist** (`experiments/ram_allowlist.json`): editable list of processes
+   that *may* be killed. Only names on this list are ever candidates.
+2. **Hard denylist** (hardcoded in `ram_manager.py`): non-overridable list that
+   can *never* be killed, even if present in the allowlist file. Includes:
+   `explorer`, `dwm`, `winlogon`, `csrss`, `services`, `svchost`, `python`,
+   `ollama`, `llama-server`, `msmpeng`, `sqlservr`, `code`, `cursor`, and all
+   common IDE/terminal/shell processes.
+   **The denylist always wins over the allowlist.** A unit test specifically
+   verifies this cannot be bypassed even via a maliciously edited allowlist file.
+
+### Editing the Allowlist
+
+Edit `experiments/ram_allowlist.json` to add or remove process names:
+
+```json
+{
+  "allowlist": ["chrome", "msedge", "spotify", "discord"]
+}
+```
+
+Use the process name as it appears in Task Manager (without `.exe`).
+Names are matched case-insensitively.
+
+### Usage
+
+```powershell
+# Check free RAM without killing anything:
+python -m experiments.ram_manager --check-only
+
+# List allowlisted processes currently running:
+python -m experiments.ram_manager --list-candidates
+
+# Interactive: shows candidates, asks 'yes' before killing (default):
+python -m experiments.ram_manager --target 4.0
+
+# Non-interactive (unattended runs, all kills logged to experiments/logs/ram_manager.log):
+python -m experiments.ram_manager --target 4.0 --non-interactive
+```
+
+### Integration with Experiment Scripts
+
+Add `--auto-free-ram` to any supported script to activate the gate:
+
+```powershell
+# probe_llm_backend.py — check RAM, free if needed, then probe:
+python -m experiments.probe_llm_backend --auto-free-ram --ram-target 4.0
+
+# ablation_sweep.py — free RAM before starting a long sweep:
+python experiments/ablation_sweep.py --auto-free-ram --ram-target 4.0
+
+# option_b_e2e_test.py:
+python experiments/option_b_e2e_test.py --auto-free-ram --ram-target 3.5
+
+# Non-interactive (for scripts/CI):
+python -m experiments.probe_llm_backend --auto-free-ram --non-interactive --ram-target 4.0
+```
+
+> **Default behavior is unchanged.** Without `--auto-free-ram`, all scripts
+> behave exactly as before (warn or hard-fail on low RAM, no automatic killing).
+
+### Logs
+
+All non-interactive kills are logged to `experiments/logs/ram_manager.log`
+with timestamps, process names, PIDs, and RAM freed.
+
+---
+
+*PACM v2.0.0 — Session 30 — October 2026*

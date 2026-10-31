@@ -257,7 +257,43 @@ if __name__ == "__main__":
                         help="Suppress output; exit code 0=pass, 1=fail.")
     parser.add_argument("--json", action="store_true", dest="json_output",
                         help="Output result as JSON.")
+    parser.add_argument("--auto-free-ram", action="store_true",
+                        help="If RAM is below --ram-target GB, attempt to free it "
+                             "by killing processes from ram_allowlist.json (interactive "
+                             "by default, use --non-interactive for unattended runs). "
+                             "Default OFF — must be explicitly opted in.")
+    parser.add_argument("--non-interactive", action="store_true",
+                        help="Used with --auto-free-ram: kill candidates without "
+                             "prompting (all actions logged to experiments/logs/ram_manager.log).")
+    parser.add_argument("--ram-target", type=float, default=4.0,
+                        help="Target free RAM in GB when --auto-free-ram is set (default: 4.0).")
     args = parser.parse_args()
+
+    # ── RAM gate (opt-in only via --auto-free-ram) ─────────────────────────────
+    if args.auto_free_ram:
+        try:
+            import psutil as _psutil
+            _free = _psutil.virtual_memory().available / 1024 ** 3
+            if not args.quiet:
+                print(f"  RAM check: {_free:.2f} GB free (target {args.ram_target:.2f} GB)")
+            if _free < args.ram_target:
+                if not args.quiet:
+                    print("  RAM below target — attempting to free via ram_manager...")
+                # Import here so the module is optional (probe still works without it)
+                sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+                from experiments.ram_manager import free_ram as _free_ram
+                _ok = _free_ram(
+                    target_gb=args.ram_target,
+                    interactive=not args.non_interactive,
+                )
+                if not _ok:
+                    print("  ERROR: Could not reach RAM target after auto-free attempt.")
+                    print("  Close additional applications manually and re-run.")
+                    sys.exit(1)
+        except ImportError:
+            if not args.quiet:
+                print("  (psutil not available — skipping RAM gate)")
+
 
     if not args.quiet:
         print("\n  Loading LLM config from environment...", flush=True)

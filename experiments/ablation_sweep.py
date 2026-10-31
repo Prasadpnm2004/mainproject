@@ -664,6 +664,19 @@ def main() -> None:
         "--n", type=int, default=_N_PER_CONDITION,
         help=f"Runs per condition (default: {_N_PER_CONDITION})",
     )
+    parser.add_argument(
+        "--auto-free-ram", action="store_true",
+        help="If RAM is below --ram-target GB, kill allowlisted processes to free it. "
+             "Interactive by default. Must be explicitly opted in.",
+    )
+    parser.add_argument(
+        "--non-interactive", action="store_true",
+        help="With --auto-free-ram: kill without prompting (logs to experiments/logs/ram_manager.log).",
+    )
+    parser.add_argument(
+        "--ram-target", type=float, default=4.0,
+        help="Target free RAM in GB for --auto-free-ram (default: 4.0).",
+    )
     args = parser.parse_args()
 
     _N_PER_CONDITION = args.n
@@ -681,8 +694,22 @@ def main() -> None:
         import psutil
         free_gb = psutil.virtual_memory().available / 1024**3
         print(f"Free RAM: {free_gb:.2f} GB")
-        if free_gb < 2.0:
+        if args.auto_free_ram and free_gb < args.ram_target:
+            print(f"RAM below {args.ram_target:.1f} GB target — attempting to free via ram_manager...")
+            _repo_root = Path(__file__).resolve().parent.parent
+            sys.path.insert(0, str(_repo_root))
+            from experiments.ram_manager import free_ram as _free_ram
+            _ok = _free_ram(
+                target_gb=args.ram_target,
+                interactive=not args.non_interactive,
+            )
+            if not _ok:
+                print(f"ERROR: Could not reach {args.ram_target:.1f} GB RAM target.")
+                print("Close additional applications manually and retry.")
+                sys.exit(1)
+        elif free_gb < 2.0:
             print("WARNING: Less than 2 GB free — model may fail to load.")
+            print("Tip: run with --auto-free-ram to automatically free RAM.")
     except ImportError:
         print("(psutil not available — skipping RAM check)")
 
