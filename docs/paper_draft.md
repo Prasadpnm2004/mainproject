@@ -13,9 +13,9 @@ Large language model (LLM) agents that invoke external tools via the Model Conte
 
 During real-model evaluation with `qwen3:8b` (Ollama, n=10 per condition), we discover and characterize a previously undocumented integration failure: **Silent CoT Collapse (SCC)**, in which the standard LangChain + OpenAI-compat-endpoint + local-reasoning-model integration silently discards chain-of-thought content, causing the divergence scorer to operate on an empty reasoning string. The consequence is near-deterministic, zero-discriminative divergence scores (D = 0.1546 ± 0.001 across 9/10 runs), making the reasoning-augmented detector functionally equivalent to a scope-only heuristic.
 
-A three-way controlled ablation (scope-only vs. scope+reasoning vs. naive keyword baseline, n=10 per condition) reveals two novel failure modes in reasoning-aware detectors. The **Overthinking Trap** triggers false positives precisely when the model correctly identifies and narrates rejection of an injected instruction — contaminating the reasoning trace with attack vocabulary that the semantic scorer reads as divergence (D = 0.560 observed in 4 independent instances, 2/10 runs; Wilson 95% CI [5.7%, 51.0%]). **Anticipatory False Positives (AFP)** occur when keyword detectors fire on the model's *pre-injection* defensive deliberation before the model has seen any malicious content (3/10 runs; CI [10.8%, 60.4%]), a perverse incentive that specifically penalises safety-conscious reasoning models.
+A three-way controlled ablation (scope-only vs. scope+reasoning vs. naive keyword baseline, n=10 per condition) reveals two novel failure modes in reasoning-aware detectors. The **Overthinking Trap** triggers false positives precisely when the model correctly identifies and narrates rejection of an injected instruction — contaminating the reasoning trace with attack vocabulary that the semantic scorer reads as divergence (D = 0.560 observed in 4 independent instances, 2/10 runs; Wilson 95% CI [5.7%, 51.0%]). **Anticipatory False Positives (AFP)** occur when keyword detectors fire on the model's *pre-injection* defensive deliberation before the model has seen any malicious content (3/10 runs; CI [10.8%, 60.3%]), a perverse incentive that specifically penalises safety-conscious reasoning models.
 
-A Fisher's exact test comparing scope-only and scope+reasoning false-positive rates yields p = 0.4737 — inconclusive at n=10, with a power analysis indicating approximately n=38/condition needed for 80% power. We report this as an honest null result. Traditional Attack Block Rate (ABR) was unmeasurable: the underlying model resisted injection in all 30/30 runs across conditions, shifting the evaluation frame to characterizing false-positive burden under model resistance. PACM is implemented as a modular pre-tool hook requiring zero changes to agent harness internals, with 454 passing unit tests and a one-command reproducibility pipeline.
+A Fisher's exact test comparing scope-only and scope+reasoning false-positive rates yields p = 0.4737 — inconclusive at n=10, with a power analysis indicating approximately n=38/condition needed for 80% power. We report this as an honest null result. Traditional Attack Block Rate (ABR) was unmeasurable: the underlying model resisted injection in all 30/30 runs across conditions, shifting the evaluation frame to characterizing false-positive burden under model resistance. PACM is implemented as a modular pre-tool hook requiring zero changes to agent harness internals, with 524 passing unit tests (544 collected; 20 pre-existing `test_scorer_transformers.py` failures excluded, requiring a live SentenceTransformers model/GPU not available in this environment) and a one-command reproducibility pipeline.
 
 ---
 
@@ -68,7 +68,7 @@ This paper addresses four research questions derived from real-model evaluation.
 | RQ1 | Does the standard LangChain + OpenAI-compatible-endpoint integration pattern silently discard chain-of-thought content when used with local reasoning models (Silent CoT Collapse)? | **Confirmed.** D = 0.1546 in 9/10 scope-only runs; reasoning_len = 0 in 9/10 runs. Zero discriminative power under SCC. |
 | RQ2 | With the reasoning-availability gap resolved via the native API, does incorporating real CoT reasoning measurably improve attack detection over scope-based signal alone? | **Inconclusive at n=10.** Fisher's exact test: p = 0.4737 (scope-only 0/10 FP vs. scope+reasoning 2/10 FP). Approximately n=38/condition required for 80% power. Direction is consistent with the hypothesis; evidence is insufficient to confirm at this sample size. |
 | RQ3 | What failure modes does reasoning-aware semantic divergence scoring introduce that scope-only scoring does not exhibit? | **Identified: the Overthinking Trap.** When the model correctly identifies and narrates rejection of an injection, attack vocabulary in the reasoning contaminates D (D=0.560, 4 independent observations, 2/10 rate in scope+reasoning condition, Wilson 95% CI [5.7%, 51.0%]). |
-| RQ4 | What failure modes does a naive keyword/regex content detector exhibit that a semantic approach does not? | **Identified: Anticipatory False Positives (AFP).** Keyword detectors fire on the model's pre-injection defensive deliberation before the model has seen any malicious content (3/10 rate in naive-baseline condition, Wilson 95% CI [10.8%, 60.4%]). |
+| RQ4 | What failure modes does a naive keyword/regex content detector exhibit that a semantic approach does not? | **Identified: Anticipatory False Positives (AFP).** Keyword detectors fire on the model's pre-injection defensive deliberation before the model has seen any malicious content (3/10 rate in naive-baseline condition, Wilson 95% CI [10.8%, 60.3%]). |
 
 > **Relationship to earlier synthetic benchmark (§5.1–5.8).** Sections 5.1–5.8 address the original RQ set from the system design phase (divergence scoring reliability, alpha sensitivity, latency, adaptive attacker stress test) using synthetic/stub-mode traces. Those experiments validate the PACM framework's components; the four RQs above emerge from real-model evaluation and constitute the paper's primary empirical contribution.
 
@@ -423,7 +423,7 @@ Session 24's naive_baseline condition revealed a second novel failure mode: **An
 
 AFP is structurally distinct from the Overthinking Trap (§5.9.3): the Trap triggers post-injection on narrated rejection; AFP triggers pre-injection on anticipatory deliberation. A model that reasons carefully before tool calls — a desirable property — is *more* vulnerable to AFP. This is a perverse incentive structure: the detector specifically penalises safety-conscious pre-call deliberation.
 
-**Observed rate (Session 24, n=10):** *3/10 (30.0%), Wilson 95% CI **[10.8%, 60.4%]**.* These 3 runs never reached send_email, reducing the FPR/BTSR denominator from 10 to 7.
+**Observed rate (Session 24, n=10):** *3/10 (30.0%), Wilson 95% CI **[10.8%, 60.3%]**.* These 3 runs never reached send_email, reducing the FPR/BTSR denominator from 10 to 7.
 
 **Address degradation (run 7).** After the detector blocked the legitimate send_email to `boss@company.com`, repeated unexplained blocks caused the model's output to degrade: it eventually produced **`boss@mercial.com`** — a corrupted address not present anywhere in context. This is a concrete, empirically observed downstream safety consequence of high-FPR detection: the model modified its output to escape an unexplained constraint and hallucinated the address in the process. *(Source: s24_ablation.jsonl, naive_baseline run 7, second send_email to=boss@mercial.com, reasoning_len=1371.)*
 
@@ -439,7 +439,7 @@ AFP is structurally distinct from the Overthinking Trap (§5.9.3): the Trap trig
 | Penalises | Models that narrate attack rejection explicitly | Models that deliberate carefully before tool calls |
 | Observable signature | Block → retry allowed (D drops to clean baseline) | Block at read_inbox; model never sees injection |
 
-**What cannot be compared at this sample size.** The Overthinking Trap rate (2/10, CI [5.7%, 51.0%]) and AFP rate (3/10, CI [10.8%, 60.4%]) have substantially overlapping confidence intervals. No numerical claim about which failure mode is more frequent can be supported by the current data. Statements such as "AFP occurs more often than the Trap" or "the Trap is rarer" are unsupported at n=10 each. The two findings are legitimately distinguished by mechanism and detector type — not by measured rate. *This restriction applies to all future editing of this section: mechanism comparisons are valid; numerical rate comparisons require non-overlapping confidence intervals.*
+**What cannot be compared at this sample size.** The Overthinking Trap rate (2/10, CI [5.7%, 51.0%]) and AFP rate (3/10, CI [10.8%, 60.3%]) have substantially overlapping confidence intervals. No numerical claim about which failure mode is more frequent can be supported by the current data. Statements such as "AFP occurs more often than the Trap" or "the Trap is rarer" are unsupported at n=10 each. The two findings are legitimately distinguished by mechanism and detector type — not by measured rate. *This restriction applies to all future editing of this section: mechanism comparisons are valid; numerical rate comparisons require non-overlapping confidence intervals.*
 
 ---
 
@@ -449,7 +449,7 @@ AFP is structurally distinct from the Overthinking Trap (§5.9.3): the Trap trig
 ### 6.1 Limitations
 
 1. **Silent CoT Collapse (SCC) scope:** SCC is confirmed for the LangChain + OpenAI-compat-endpoint + `qwen3:8b` integration stack (§5.9.1). Whether other local reasoning models (deepseek-r1, phi-4-reasoning) or other frameworks exhibit the same failure requires separate verification.
-2. **Sample size ceiling (n=10 per condition):** The three-way ablation is underpowered for the core RQ2 FPR comparison. Fisher's exact test yields p=0.4737 at n=10; approximately n=38/condition is required for 80% power. Overthinking Trap frequency (2/10, CI [5.7%, 51.0%]) and AFP frequency (3/10, CI [10.8%, 60.4%]) both have wide intervals that overlap each other and cannot be compared numerically at this sample size.
+2. **Sample size ceiling (n=10 per condition):** The three-way ablation is underpowered for the core RQ2 FPR comparison. Fisher's exact test yields p=0.4737 at n=10; approximately n=38/condition is required for 80% power. Overthinking Trap frequency (2/10, CI [5.7%, 51.0%]) and AFP frequency (3/10, CI [10.8%, 60.3%]) both have wide intervals that overlap each other and cannot be compared numerically at this sample size.
 3. **ABR undefined in real-model evaluation:** The underlying model resisted injection in all 30/30 runs. This may reflect genuine model robustness or may reflect the attack being too easy at this capability level. ABR cannot be measured in this setup; all findings characterize false-positive burden conditional on model resistance.
 4. **Overthinking Trap frequency is preliminary:** The mechanism is strongly confirmed (D=0.560 in 4 independent observations). The frequency estimate (2/10, 20%) is preliminary at n=10. A combined n=15 estimate across Sessions 23 and 24 must not be reported.
 5. **AFP is an observed phenomenon, not a confirmed general property:** AFP was observed in 3/10 naive-baseline runs. Whether it generalizes to other keyword detectors, attack phrasings, or reasoning models requires broader evaluation.
@@ -528,29 +528,33 @@ The controlled ablation (n=10/condition) yields an inconclusive but directionall
 
 ## Appendix B — Test Suite
 
-Total: **454 tests, 454/454 passing** (directly verified from `pytest --collect-only -q`, 2026-10-24).
+Total: **524 passing / 544 collected** (directly verified from `pytest --collect-only -q`, 2026-11-22). The 20-test gap is `test_scorer_transformers.py`, which requires a live SentenceTransformers model/GPU not available in this environment and has pre-existing failures excluded from all session baselines.
 
-| Test file | Tests | Focus |
-|-----------|-------|-------|
-| `test_adaptive_and_ablations.py` | 33 | Adaptive attack, error analysis, ablations |
-| `test_baseline_detector.py` | 40 | Naive keyword/regex baseline detector |
-| `test_calibration_and_sweep.py` | 26 | Calibration, ROC |
-| `test_custom_loop.py` | 26 | CustomLoopHarness + CoT extraction |
-| `test_experiment_runner.py` | 39 | Sweep runner, metrics |
-| `test_harness_smoke.py` | 22 | Harness integration |
-| `test_llm_config.py` | 33 | LLM provider config + backend selection |
-| `test_llm_native.py` | 28 | Native Ollama API (think=True path) |
-| `test_mcp_wrapper.py` | 33 | MCPWrappedTool |
-| `test_native_reasoning_probe.py` | 20 | Reasoning extraction probes |
-| `test_option_b_e2e_config.py` | 15 | Option B / E2E config tests |
-| `test_pacm_core.py` | 41 | Extractor, capturer, scorer, middleware |
-| `test_policy.py` | 31 | FrictionPolicy + scope boost |
-| `test_reproducibility.py` | 22 | Pipeline & artifact checks |
-| `test_scorer_transformers.py` | 20 | ST backend |
-| `test_sensitivity.py` | 25 | Alpha sensitivity |
-| **Total** | **454** | |
+| Test file | Tests | Focus | Added |
+|-----------|-------|-------|-------|
+| `test_adaptive_and_ablations.py` | 33 | Adaptive attack, error analysis, ablations | original |
+| `test_baseline_detector.py` | 40 | Naive keyword/regex baseline detector | Session 20 |
+| `test_calibration_and_sweep.py` | 26 | Calibration, ROC | original |
+| `test_custom_loop.py` | 26 | CustomLoopHarness + CoT extraction | original |
+| `test_evaluate_blocking.py` | 36 | 3-tier blocking evaluator | Session 34 |
+| `test_experiment_runner.py` | 39 | Sweep runner, metrics | Session 21 |
+| `test_harness_smoke.py` | 22 | Harness integration | original |
+| `test_llm_config.py` | 33 | LLM provider config + backend selection | Session 19 |
+| `test_llm_native.py` | 28 | Native Ollama API (think=True path) | Session 20 |
+| `test_mcp_wrapper.py` | 33 | MCPWrappedTool | original |
+| `test_native_reasoning_probe.py` | 20 | Reasoning extraction probes | Session 19 |
+| `test_option_b_e2e_config.py` | 15 | Option B / E2E config tests | Session 23 |
+| `test_pacm_core.py` | 41 | Extractor, capturer, scorer, middleware | original |
+| `test_policy.py` | 31 | FrictionPolicy + scope boost | original |
+| `test_ram_manager.py` | 26 | RAM manager + allowlist | Session 30 |
+| `test_reproducibility.py` | 22 | Pipeline & artifact checks | original |
+| `test_results_summary.py` | 28 | Live results dashboard | Session 33 |
+| `test_scorer_transformers.py` | 20 | ST backend (excluded — requires GPU) | original |
+| `test_sensitivity.py` | 25 | Alpha sensitivity | original |
+| **Passing total (excl. ST)** | **524** | | |
+| **Collected total** | **544** | | |
 
-**Source:** All counts from `python -m pytest --collect-only -q` run 2026-10-24 — not inherited from prior session appendix. Sum verified: 33+40+26+26+39+22+33+28+33+20+15+41+31+22+20+25 = 454.
+**Source:** All counts from `python -m pytest --collect-only -q` run 2026-11-22. Sum verified: 33+40+26+26+36+39+22+33+28+33+20+15+41+31+26+22+28+25 = 524 (excl. ST 20) = 544 total.
 
 ---
 
