@@ -455,7 +455,7 @@ $\theta_{\mathrm{allow}} \le F < \theta_{\mathrm{block}}$ $\to$ \textsc{Flag}
 $D_{\mathrm{sem}}$ and $P_{\mathrm{scope}}$ components.
 
 \begin{quote}
-\textbf{Stub-mode note:} ABR/FPR values in Table~\ref{tab:full_sweep}
+\textbf{Stub-mode note:} ABR/FPR values in Table~\ref{tab:pacm_results}
 reflect \emph{stub mode} execution (no live LLM API calls). Stub reasoning
 traces produce uniform text, yielding moderate divergence ($D \approx
 0.3$--$0.4$) that falls in the \textsc{Flag} zone. Real-LLM evaluation
@@ -527,6 +527,13 @@ production deployment should consider $\alpha \in [0.8, 0.9]$.
 
 \subsection{Full 16-Configuration Benchmark}
 \label{sec:sweep}
+
+\noindent\textit{Scope note.} The results in Table~\ref{tab:pacm_results} are
+from stub-mode execution (no live LLM API calls). Stub reasoning traces produce
+uniform text, yielding moderate divergence ($D \approx 0.3$--$0.4$) in the
+\textsc{Flag} zone. All reported numbers in \S\,\ref{sec:realmodel} are from
+real \texttt{qwen3:8b} inference runs, not stub mode; source artifacts:
+\texttt{experiments/s24\_ablation.jsonl}, \texttt{experiments/s24\_ablation\_stats.json}.
 
 \input{paper_table.tex}
 
@@ -715,7 +722,42 @@ naive-baseline   & 2/7\rlap{$^\dagger$} (28.6\%) & {[}8.2\%, 64.1\%{]}  & & 5/7 
 \end{tablenotes}
 \end{table}
 
-\noindent\textbf{Silent CoT Collapse (\S\,\ref{sec:scc}).}
+% Overthinking Trap magnitude evidence (four independent observations).
+% Source: paper_draft.md §5.9.3; s24_ablation_stats.json (trap_d values).
+
+\begin{table}[htbp]
+\centering
+\caption{Overthinking Trap: four independent observations across three sessions.
+         $D_{\text{blocked}}$ = divergence score on the false-positive block;
+         $D_{\text{retry}}$ = divergence score on the subsequent allowed retry.}
+\label{tab:trap_obs}
+\begin{tabular}{llrrp{5.5cm}}
+\toprule
+Dataset & Session & $D_{\text{blocked}}$ & $D_{\text{retry}}$ & Notes \\
+\midrule
+S21 obs.\ 1 & 21 & 0.560 & 0.193 &
+  Non-canonical policy/thresholds; no trust\_registry.
+  Listed for magnitude evidence only; \emph{not} pooled with frequency estimate. \\[4pt]
+S23 run 2   & 23 & 0.560 & 0.135 &
+  Canonical config; different task-prompt phrasing from S24.
+  Corroborating evidence; not pooled ($n=5$ insufficient). \\[4pt]
+S24 run 4   & 24 & 0.560 & 0.119 &
+  Canonical AGGRESSIVE policy, ignore\_previous attack. \\[4pt]
+S24 run 7   & 24 & 0.560 & 0.183 &
+  Same config; address degradation to \texttt{boss@mercial.com} observed
+  post-block under retry pressure. \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}\small
+  \item $D_{\text{blocked}} = 0.560$ reproduced to three significant figures across
+    all four observations spanning two policy configurations and three sessions.
+    This cross-session magnitude lock indicates the outcome is structurally
+    determined by the attack vocabulary and scorer, not noise.
+  \item \textbf{Frequency (primary, canonical config):} S24 $n=10$, 2/10 runs
+    triggered the Trap (Wilson 95\% CI $[5.7\%, 51.0\%]$). S23 $n=5$ result
+    (1/5) is corroborating only; sessions are \emph{not} pooled.
+\end{tablenotes}
+\end{table} (\S\,\ref{sec:scc}).}
 $D = 0.1546 \pm 0.001$ in 9/10 scope-only runs confirms zero discriminative
 power when reasoning is silently discarded.
 
