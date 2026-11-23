@@ -105,7 +105,9 @@ Session 24's naive_baseline condition revealed a distinct, previously unnamed fa
 
 A well-aligned model that reasons carefully about what it is about to do is *more* likely to trigger AFP than a model that calls tools without pre-call deliberation. This means AFP **specifically penalises safety-conscious models** — the more careful the model's pre-call reasoning, the higher the AFP rate. This is a perverse incentive structure that should be documented as a limitation of keyword-based detection on reasoning-enabled models.
 
-**Statistical framing (n=10, preliminary):** AFP rate 3/10 (30.0%), Wilson 95% CI [10.8%, 60.4%]. This is an observed phenomenon at n=10, not a confirmed general property of all keyword detectors. A broader evaluation across multiple keyword detector implementations and attack phrases would be needed to confirm AFP is systematic rather than specific to this detector's pattern set.
+**Statistical framing (n=10, preliminary):** AFP rate 3/10 (30.0%), Wilson 95% CI [10.8%, 60.3%]. This is an observed phenomenon at n=10, not a confirmed general property of all keyword detectors. A broader evaluation across multiple keyword detector implementations and attack phrases would be needed to confirm AFP is systematic rather than specific to this detector's pattern set.
+
+> **[Corrected Session 36 → Supervisor review 2026-11-23]** Prior value was 60.4% (rounding error). Authoritative value is 60.3%, matching all five locations in `docs/paper_draft.md`.
 
 **Relationship to prior work:** AFP has not been identified or named in the IPI detection literature. CaMeL, ARGUS, MEMIR, and Eywa all evaluate detectors on outcomes (attack blocked / allowed) without separately measuring the rate at which detectors fire pre-injection, before seeing malicious content. The AFP framing makes this distinction explicit and measurable.
 
@@ -240,3 +242,41 @@ This is the whole remaining project. No more scope decisions after this document
 **Comment added to both files to surface this decision:**
 - `docs/paper_draft.md`: header comment on line 1
 - `docs/paper.tex`: comment in preamble
+
+---
+
+## §8 Project State Summary — Sessions 26–36 (Supervisor update 2026-11-23)
+
+*This section is maintained by the Research Supervisor and updated after each review cycle. It is the single source of verified project state.*
+
+### Verified Completion State (as of Session 36 / commit `e47574b`)
+
+| Area | Status | Notes |
+|---|---|---|
+| **Empirical work** | ✅ Complete | All live runs done (30/30 runs across 3 conditions, n=10 each). No further data collection planned. |
+| **SCC finding** | ✅ Confirmed | D = 0.1546 ± 0.001 in 9/10 scope-only runs; reasoning_len = 0 in 9/10 runs. Fully reported in §5.9.1. |
+| **Overthinking Trap** | ✅ Confirmed (mechanism); ⚠️ Preliminary (frequency) | D = 0.560 in 4 independent instances (3 datasets). Rate 2/10, Wilson 95% CI [5.7%, 51.0%]. |
+| **AFP finding** | ✅ Confirmed (mechanism); ⚠️ Preliminary (frequency) | Rate 3/10, Wilson 95% CI [10.8%, **60.3%**]. (Corrected from 60.4% — supervisor 2026-11-23.) |
+| **Statistical reporting** | ✅ Honest null reported | Fisher's exact p = 0.4737 on RQ2; power analysis (n=38) stated. No overclaiming. |
+| **Test suite** | ✅ 524 passing / 544 collected | 20 excluded (`test_scorer_transformers.py`, requires GPU). Arithmetic independently verified. |
+| **`paper_draft.md`** | ✅ Authoritative, current | All session edits through Session 36 applied. Single source of truth for paper content. |
+| **`references.bib`** | ✅ Current | `Bai2022ConstitutionalAI` added Session 36. |
+| **`paper.tex`** | ⚠️ Frozen at Session 28 | Stale by ~8 sessions. Must be regenerated before arXiv/venue submission. Pandoc NOT installed. |
+| **Author/affiliation** | ❌ Unresolved | Placeholder stubs in `paper.tex`. Must be decided before submission. |
+| **Git — local** | ✅ Clean | Working tree clean. Last commit: `e47574b`. |
+| **Git — remote** | ⚠️ 2 commits behind | `b1abade` (Sessions 29–35) and `e47574b` (Session 36) not yet pushed. **Push before Session 37.** |
+
+### Open Tasks Before arXiv/Submission
+
+1. `git push origin main` ← **immediate, before Session 37**
+2. `paper.tex` regeneration (Session 37 scope) — hand-edit sync, section by section against `paper_draft.md`; no Pandoc available
+3. Author/affiliation resolution ← **needs user decision**
+4. `paper_draft.md` version footer cleanup (two stale footers at lines 561–567)
+5. LaTeX compilation verification (requires installing a LaTeX distribution, e.g. MiKTeX)
+
+### Decisions Made and Locked
+- Path B scope (single harness, single attack type) — `§3`
+- `paper_draft.md` as single authoritative source, `paper.tex` frozen until regeneration — `§7`
+- AFP CI is **60.3%** (not 60.4%) — corrected and locked in this document and `paper_draft.md`
+- Overthinking Trap D=0.560 and AFP rate not to be compared numerically (overlapping CIs) — `§5.9.5`
+- Do not pool Session 23 (n=5) + Session 24 (n=10) data — `§2.5`
