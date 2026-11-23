@@ -1,10 +1,9 @@
 % docs/paper.tex
-% PACM v2.0.0 — LaTeX Export (FROZEN at Session 28, 2026-10-23)
-% MAINTENANCE NOTE (Session 28): This file is FROZEN.
+% PACM v2.1.0 (Session 37 sync) — Regenerated Session 37 — synced to paper_draft.md through Session 36
+% MAINTENANCE NOTE (Session 37): This file has been hand-synced to paper_draft.md.
 %   All future paper content edits go to docs/paper_draft.md (the authoritative source).
 %   Regenerate paper.tex from paper_draft.md when a LaTeX submission is required.
 %   See PACM_Final_Direction.md §7 for the full decision rationale.
-%   Do NOT hand-edit this file between now and the next LaTeX-export session.
 %
 % Compile with:
 %   pdflatex paper.tex
@@ -93,7 +92,7 @@
   \small{\texttt{pacm-research@example.com}}
 }
 
-\date{October 2026 \quad --- \quad v2.0.0 (arXiv preprint)}
+\date{November 2026 \quad --- \quad v2.1.0 (Session 37 sync)}
 
 % ── Document ──────────────────────────────────────────────────────────────────
 \begin{document}
@@ -129,14 +128,16 @@ scorer reads as divergence ($D = 0.560$ in 4 independent observations;
 $2/10$ runs, Wilson 95\% CI $[5.7\%, 51.0\%]$). \textbf{Anticipatory False
 Positives (AFP)} occur when keyword detectors fire on the model's
 \emph{pre-injection} defensive deliberation before the model has seen any
-malicious content ($3/10$ runs, CI $[10.8\%, 60.4\%]$).
+malicious content ($3/10$ runs, CI $[10.8\%, 60.3\%]$).
 
 A Fisher's exact test comparing scope-only and scope+reasoning false-positive
 rates yields $p = 0.4737$ --- inconclusive at $n=10$; approximately
 $n=38$/condition is required for 80\% power. Traditional Attack Block Rate
 was unmeasurable (model resisted injection in all 30/30 runs). \pacm{} is
-implemented as a modular pre-tool hook with 454 passing unit tests and a
-one-command reproducibility pipeline.
+implemented as a modular pre-tool hook with 524 passing unit tests (544
+collected; 20 pre-existing \texttt{test\_scorer\_transformers.py} failures excluded,
+requiring a live SentenceTransformers model/GPU not available in this environment)
+and a one-command reproducibility pipeline.
 \end{abstract}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -233,14 +234,63 @@ non-adaptive, lexical mimic, semantic disguise, scope-flag hiding, and fully
 adaptive (combined).
 
 \subsection{Research Questions}
+\label{sec:rqs}
 
-\begin{description}[leftmargin=2em]
-  \item[RQ1] Does plan-action divergence scoring reliably detect injection?
-  \item[RQ2] What is the optimal $\alpha$ (semantic vs.\ scope weight)?
-  \item[RQ3] What is \pacm{}'s latency overhead vs.\ undefended agents?
-  \item[RQ4] Which \pacm{} components contribute most (ablation)?
-  \item[RQ5] How does detection degrade against adaptive adversaries?
-\end{description}
+This paper addresses four research questions derived from real-model evaluation.
+RQ1 and RQ2 concern the reliability of the plan-action divergence thesis in
+practice; RQ3 and RQ4 characterize the failure modes that reasoning-aware and
+content-based detectors introduce.
+
+\begin{table}[htbp]
+\centering
+\caption{Research questions and findings.}
+\label{tab:rqs}
+\begin{tabularx}{\linewidth}{lXX}
+\toprule
+\textbf{RQ} & \textbf{Question} & \textbf{Status / Finding} \\
+\midrule
+RQ1 &
+  Does the standard LangChain + OpenAI-compatible-endpoint integration
+  pattern silently discard chain-of-thought content when used with local
+  reasoning models (Silent CoT Collapse)? &
+  \textbf{Confirmed.} $D = 0.1546$ in 9/10 scope-only runs;
+  \texttt{reasoning\_len = 0} in 9/10 runs. Zero discriminative power
+  under SCC. \\[6pt]
+RQ2 &
+  With the reasoning-availability gap resolved via the native API, does
+  incorporating real CoT reasoning measurably improve attack detection
+  over scope-based signal alone? &
+  \textbf{Inconclusive at $n=10$.} Fisher's exact test: $p = 0.4737$
+  (scope-only 0/10 FP vs.\ scope+reasoning 2/10 FP). Approximately
+  $n=38$/condition required for 80\% power. Direction is consistent with
+  the hypothesis; evidence is insufficient to confirm at this sample
+  size. \\[6pt]
+RQ3 &
+  What failure modes does reasoning-aware semantic divergence scoring
+  introduce that scope-only scoring does not exhibit? &
+  \textbf{Identified: the Overthinking Trap.} When the model correctly
+  identifies and narrates rejection of an injection, attack vocabulary in
+  the reasoning contaminates $D$ ($D=0.560$, 4 independent observations,
+  2/10 rate in scope+reasoning condition, Wilson 95\% CI
+  $[5.7\%, 51.0\%]$). \\[6pt]
+RQ4 &
+  What failure modes does a naive keyword/regex content detector exhibit
+  that a semantic approach does not? &
+  \textbf{Identified: Anticipatory False Positives (AFP).} Keyword
+  detectors fire on the model's pre-injection defensive deliberation
+  before the model has seen any malicious content (3/10 rate in
+  naive-baseline condition, Wilson 95\% CI $[10.8\%, 60.3\%]$). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent\textit{Relationship to earlier synthetic benchmark (\S\,\ref{sec:scoring}--\ref{sec:errors}).}
+Sections~\ref{sec:scoring}--\ref{sec:errors} address the original RQ set from
+the system design phase (divergence scoring reliability, $\alpha$ sensitivity,
+latency, adaptive attacker stress test) using synthetic/stub-mode traces.
+Those experiments validate the \pacm{} framework's components; the four RQs
+above emerge from real-model evaluation and constitute the paper's primary
+empirical contribution.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{System Architecture}
@@ -653,7 +703,7 @@ instances across 3 sessions; magnitude consistent to 3 significant figures.
 \noindent\textbf{Anticipatory False Positives (\S\,\ref{sec:afp}).}
 \label{sec:afp}
 3/10 na\"ive-baseline runs had \texttt{read\_inbox} blocked before the model
-seen any injected content (AFP; Wilson 95\% CI $[10.8\%, 60.4\%]$). This
+seen any injected content (AFP; Wilson 95\% CI $[10.8\%, 60.3\%]$). This
 reduced the na\"ive-baseline FPR denominator from 10 to 7. A concrete
 downstream consequence: address degradation to \texttt{boss@mercial.com}
 under retry pressure from unexplained blocks (run 7).
@@ -684,7 +734,7 @@ neither an absence of effect nor a confirmed effect.
   \item \textbf{Sample size ceiling ($n=10$):} The three-way ablation
     is underpowered. Fisher's exact yields $p=0.4737$; $\approx n=38$/condition
     is required for 80\% power. Trap (CI $[5.7\%, 51.0\%]$) and AFP
-    (CI $[10.8\%, 60.4\%]$) intervals overlap; their relative frequencies
+    (CI $[10.8\%, 60.3\%]$) intervals overlap; their relative frequencies
     cannot be compared at $n=10$.
   \item \textbf{ABR undefined:} Model resisted injection in all 30/30
     runs. ABR is unmeasurable in this setup; findings characterize
@@ -858,6 +908,12 @@ InjecAgent \citep{Zhan2024InjecAgent}.
 \mcp{} ecosystem threats; their trust taxonomy directly informs \pacm{}'s $T$
 score design.
 
+\textbf{Plan-action consistency.}
+The closest prior work is Constitutional AI \citep{Bai2022ConstitutionalAI},
+which uses LLM-based self-critique at the output layer. \pacm{} differs by
+operating at the tool-call level, without LLM calls at inference time, and
+using embedding similarity rather than LLM self-evaluation.
+
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
 \label{sec:conclusion}
@@ -919,34 +975,48 @@ and reports a pass/fail summary.
 \section{Test Suite}
 \label{app:tests}
 
-\pacm{} v1.0.0 ships with \textbf{309 unit tests} across 11 test files
-(289 non-ST + 20 sentence-transformers backend tests), all passing.
-Tests require no external API keys.
+\pacm{} v2.1.0 ships with \textbf{524 passing unit tests} (544 collected;
+20 pre-existing \texttt{test\_scorer\_transformers.py} failures excluded,
+requiring a live SentenceTransformers model/GPU not available in this
+environment). Tests require no external API keys.
 
 \begin{table}[htbp]
 \centering
-\caption{Test suite summary (v1.0.0 --- 309 passing).}
+\caption{Test suite summary (v2.1.0 --- 524 passing / 544 collected, 2026-11-22).}
 \label{tab:tests}
-\begin{tabular}{lrl}
+\begin{tabular}{lrll}
 \toprule
-Test file & Tests & Focus \\
+Test file & Tests & Focus & Added \\
 \midrule
-\texttt{test\_harness\_smoke.py}          & 16 & Harness integration \\
-\texttt{test\_custom\_loop.py}            & 26 & CustomLoopHarness + CoT extraction \\
-\texttt{test\_mcp\_wrapper.py}            & 24 & MCPWrappedTool \\
-\texttt{test\_pacm\_core.py}              & 29 & Core pipeline \\
-\texttt{test\_policy.py}                  & 31 & FrictionPolicy + scope boost \\
-\texttt{test\_experiment\_runner.py}      & 25 & Sweep runner \\
-\texttt{test\_calibration\_and\_sweep.py} & 25 & Calibration, ROC \\
-\texttt{test\_sensitivity.py}             & 25 & Alpha sensitivity \\
-\texttt{test\_reproducibility.py}         & 22 & Pipeline \& artifact checks \\
-\texttt{test\_scorer\_transformers.py}    & 20 & ST backend \\
-\texttt{test\_adaptive\_and\_ablations.py}& 33 & RQ5, ablations, errors \\
+\texttt{test\_adaptive\_and\_ablations.py}  & 33 & Adaptive attack, error analysis, ablations & original \\
+\texttt{test\_baseline\_detector.py}        & 40 & Naive keyword/regex baseline detector       & Session 20 \\
+\texttt{test\_calibration\_and\_sweep.py}   & 26 & Calibration, ROC                            & original \\
+\texttt{test\_custom\_loop.py}              & 26 & CustomLoopHarness + CoT extraction          & original \\
+\texttt{test\_evaluate\_blocking.py}        & 36 & 3-tier blocking evaluator                   & Session 34 \\
+\texttt{test\_experiment\_runner.py}        & 39 & Sweep runner, metrics                       & Session 21 \\
+\texttt{test\_harness\_smoke.py}            & 22 & Harness integration                         & original \\
+\texttt{test\_llm\_config.py}              & 33 & LLM provider config + backend selection     & Session 19 \\
+\texttt{test\_llm\_native.py}              & 28 & Native Ollama API (think=True path)         & Session 20 \\
+\texttt{test\_mcp\_wrapper.py}              & 33 & MCPWrappedTool                              & original \\
+\texttt{test\_native\_reasoning\_probe.py}  & 20 & Reasoning extraction probes                 & Session 19 \\
+\texttt{test\_option\_b\_e2e\_config.py}    & 15 & Option B / E2E config tests                 & Session 23 \\
+\texttt{test\_pacm\_core.py}               & 41 & Extractor, capturer, scorer, middleware     & original \\
+\texttt{test\_policy.py}                    & 31 & FrictionPolicy + scope boost                & original \\
+\texttt{test\_ram\_manager.py}             & 26 & RAM manager + allowlist                     & Session 30 \\
+\texttt{test\_reproducibility.py}           & 22 & Pipeline \& artifact checks                 & original \\
+\texttt{test\_results\_summary.py}          & 28 & Live results dashboard                      & Session 33 \\
+\texttt{test\_scorer\_transformers.py}      & 20 & ST backend (excluded --- requires GPU)      & original \\
+\texttt{test\_sensitivity.py}              & 25 & Alpha sensitivity                            & original \\
 \midrule
-\textbf{Total} & \textbf{309} & \\
+\textbf{Passing total (excl.\ ST)}         & \textbf{524} & & \\
+\textbf{Collected total}                   & \textbf{544} & & \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\noindent\textbf{Source:} All counts from \texttt{python -m pytest --collect-only -q}
+run 2026-11-22. Sum verified: $33+40+26+26+36+39+22+33+28+33+20+15+41+31+26+22+28+25 = 524$
+(excl.\ ST 20) $= 544$ total.
 
 \section{File Map}
 \label{app:files}

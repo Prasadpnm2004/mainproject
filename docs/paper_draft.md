@@ -558,10 +558,5 @@ Total: **524 passing / 544 collected** (directly verified from `pytest --collect
 
 ---
 
-*Version: 2.0.0 — Session 32 Draft*
-*Last updated: 2026-10-25*
-
----
-
-*Version: 2.0.0 — Session 27 Draft*
-*Last updated: 2026-10-23*
+*Version: 2.1.0 — Session 37 Sync*
+*Last updated: 2026-11-23*
