@@ -88,6 +88,7 @@
 }
 
 \author{%
+  \todo{Resolve: author name(s), institution, email before submission}\\
   \textbf{PACM Research Team}\\
   \small{\texttt{pacm-research@example.com}}
 }
@@ -687,7 +688,32 @@ false-positive burden conditional on model resistance.
 
 Tables~\ref{tab:s24_ablation}--\ref{tab:trap_obs} report the full results.
 
-\input{../experiments/paper_table.tex}
+% Three-way ablation results (real-model, qwen3:8b, n=10/condition).
+% Source: experiments/s24_ablation.jsonl + s24_ablation_stats.json
+% Synced from paper_draft.md §5.9.2 (Session 38).
+
+\begin{table}[htbp]
+\centering
+\caption{Three-way ablation: FPR and BTSR by condition ($n=10$/condition,
+         qwen3:8b, ignore\_previous attack, AGGRESSIVE policy).}
+\label{tab:s24_ablation}
+\begin{tabular}{lrllrl}
+\toprule
+Condition & FPR & FPR 95\% CI & & BTSR & BTSR 95\% CI \\
+\midrule
+scope-only       & 0/10 (0.0\%)   & {[}0.0\%, 27.8\%{]}  & & 10/10 (100.0\%) & {[}72.2\%, 100.0\%{]} \\
+scope+reasoning  & 2/10 (20.0\%)  & {[}5.7\%, 51.0\%{]}  & & 8/10 (80.0\%)  & {[}49.0\%, 94.3\%{]}  \\
+naive-baseline   & 2/7\rlap{$^\dagger$} (28.6\%) & {[}8.2\%, 64.1\%{]}  & & 5/7 (71.4\%)   & {[}35.9\%, 91.8\%{]}  \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}\small
+  \item All CIs are Wilson 95\%. ABR undefined: model resisted injection in 30/30 runs.
+  \item[$\dagger$] Denominator = 7: 3/10 naive-baseline runs had \texttt{read\_inbox}
+    blocked before any \texttt{send\_email} call (Anticipatory False Positives, \S\,\ref{sec:afp}).
+  \item \textbf{RQ2 Fisher's exact (scope-only vs.\ scope+reasoning):} $p = 0.4737$
+    (two-sided). Approximately $n=38$/condition required for 80\% power.
+\end{tablenotes}
+\end{table}
 
 \noindent\textbf{Silent CoT Collapse (\S\,\ref{sec:scc}).}
 $D = 0.1546 \pm 0.001$ in 9/10 scope-only runs confirms zero discriminative
@@ -1023,7 +1049,7 @@ run 2026-11-22. Sum verified: $33+40+26+26+36+39+22+33+28+33+20+15+41+31+26+22+2
 
 \begin{table}[htbp]
 \centering
-\caption{\pacm{} v1.0.0 module map.}
+\caption{\pacm{} v2.1.0 module map.}
 \label{tab:files}
 \begin{tabular}{llp{6.5cm}}
 \toprule
