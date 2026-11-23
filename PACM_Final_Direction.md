@@ -261,18 +261,21 @@ This is the whole remaining project. No more scope decisions after this document
 | **Test suite** | ✅ 524 passing / 544 collected | 20 excluded (`test_scorer_transformers.py`, requires GPU). Arithmetic independently verified. |
 | **`paper_draft.md`** | ✅ Authoritative, current | All session edits through Session 36 applied. Single source of truth for paper content. |
 | **`references.bib`** | ✅ Current | `Bai2022ConstitutionalAI` added Session 36. |
-| **`paper.tex`** | ⚠️ Frozen at Session 28 | Stale by ~8 sessions. Must be regenerated before arXiv/venue submission. Pandoc NOT installed. |
-| **Author/affiliation** | ❌ Unresolved | Placeholder stubs in `paper.tex`. Must be decided before submission. |
-| **Git — local** | ✅ Clean | Working tree clean. Last commit: `e47574b`. |
-| **Git — remote** | ⚠️ 2 commits behind | `b1abade` (Sessions 29–35) and `e47574b` (Session 36) not yet pushed. **Push before Session 37.** |
+| **`paper.tex`** | ✅ Synced (Session 37) | Hand-synced to `paper_draft.md` through Session 36. v2.1.0. All known stale values corrected. Two `\input{}` dependencies remain (see open tasks). |
+| **Author/affiliation** | ❌ Unresolved | Placeholder stubs in `paper.tex` lines 91–94. Must be decided before submission. |
+| **Git — local** | ✅ Clean | Working tree clean. Last commit: `cebe250`. |
+| **Git — remote** | ✅ Current | All commits pushed. `origin/main` = `HEAD`. |
 
 ### Open Tasks Before arXiv/Submission
 
-1. `git push origin main` ← **immediate, before Session 37**
-2. `paper.tex` regeneration (Session 37 scope) — hand-edit sync, section by section against `paper_draft.md`; no Pandoc available
-3. Author/affiliation resolution ← **needs user decision**
-4. `paper_draft.md` version footer cleanup (two stale footers at lines 561–567)
-5. LaTeX compilation verification (requires installing a LaTeX distribution, e.g. MiKTeX)
+1. ~~`git push origin main`~~ ✅ Done (Session 37)
+2. ~~`paper.tex` regeneration~~ ✅ Done (Session 37) — hand-synced, v2.1.0
+3. Author/affiliation resolution ← **needs user decision** (name, institution, email for `paper.tex` lines 91–94)
+4. ~~`paper_draft.md` version footer cleanup~~ ✅ Done (Session 37)
+5. LaTeX compilation verification — requires installing MiKTeX or using Overleaf
+6. **`\input{paper_table.tex}` at `paper.tex` line 530** — file does NOT exist at `docs/paper_table.tex`. Will cause compilation failure. Needs resolution (Session 38 scope).
+7. **`\input{../experiments/paper_table.tex}` at `paper.tex` line 690** — file exists at `experiments/paper_table.tex`. May be stale relative to current results. Needs content verification (Session 38 scope).
+8. **`\caption{PACM v1.0.0 module map.}` at `paper.tex` line 1026** — stale version string in File Map appendix caption. Minor; fix in Session 38.
 
 ### Decisions Made and Locked
 - Path B scope (single harness, single attack type) — `§3`
